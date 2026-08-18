@@ -113,19 +113,21 @@ def evidence():
     return render_template("evidence.html", evidence_list=evidence_list)
 
 
-def _process_evidence_file(case_id, investigator, file, batch_id):
-    """Runs one uploaded file through the full pipeline: hash, EXIF/pHash/ELA
-    (images), automatic AI screening, recurrence check, and chain-of-custody
-    logging. Used for both single-file and whole-folder ingests. Never raises —
-    failures are recorded as a batch_items row so one bad file can't sink a
-    folder upload."""
+def _prepare_evidence_file(case_id, investigator, file, batch_id):
+    """Fast path for one uploaded file: hash, EXIF/pHash/ELA (images), DB
+    insert, custody log, recurrence check. Deliberately does NOT call the AI
+    model — that's batched separately across the whole upload afterward, in
+    _run_ai_for_batch, so N images cost one forward pass each instead of N.
+    Never raises — failures/skips are recorded as a batch_items row immediately
+    so one bad file can't sink a folder upload; returns None for those, or a
+    dict describing what to hand to the AI phase."""
     raw_name = file.filename or "unnamed"
     filename = secure_filename(raw_name) or f"file_{uuid.uuid4().hex[:8]}"
     extension = ext_of(filename)
 
     if extension not in ALLOWED_IMAGE and extension not in ALLOWED_VIDEO:
         db.add_batch_item(batch_id, case_id, raw_name, "skipped")
-        return
+        return None
 
     try:
         data = file.read()
@@ -174,37 +176,11 @@ def _process_evidence_file(case_id, investigator, file, batch_id):
                     f"{best['case_id']}, Hamming distance {best['distance']}).",
                 )
 
-            fake_score = real_score = None
-            faces_count = None
-            try:
-                fake_score, real_score, raw_results = forensics.run_ai_detection(image)
-                faces = forensics.detect_faces(image)
-                faces_count = len(faces)
-                overlay_path = None
-                if faces:
-                    overlay = forensics.create_face_overlay(image, faces)
-                    overlay_name = f"overlay_{sha256[:12]}.jpg"
-                    overlay.save(media_dir / overlay_name, format="JPEG", quality=90)
-                    overlay_path = str(media_dir / overlay_name)
-                db.update_evidence(evidence_id, {
-                    "ai_fake_score": fake_score,
-                    "ai_real_score": real_score,
-                    "ai_raw_json": json.dumps([{"label": r["label"], "score": r["score"]} for r in raw_results]),
-                    "faces_detected": faces_count,
-                    "face_overlay_filepath": overlay_path,
-                })
-                db.add_finding(
-                    case_id,
-                    f"AI screening on '{filename}': synthetic/manipulated score "
-                    f"{fake_score*100:.1f}%, authentic score {real_score*100:.1f}%.",
-                )
-                db.add_event(case_id, investigator, "AI image analysis",
-                              f"fake={fake_score:.4f}; real={real_score:.4f}; faces={faces_count}")
-            except Exception:
-                pass  # hashing/EXIF/ELA results still stand even if the AI model call fails
-
-            db.add_batch_item(batch_id, case_id, filename, "ok", evidence_id=evidence_id, kind="image",
-                               ai_fake_score=fake_score, faces=faces_count, recurrence=len(matches))
+            return {
+                "kind": "image", "evidence_id": evidence_id, "filename": filename,
+                "image": image, "media_dir": media_dir, "sha256": sha256,
+                "recurrence": len(matches),
+            }
 
         else:  # video
             stored_name = f"orig_{sha256[:12]}.{extension}"
@@ -221,38 +197,97 @@ def _process_evidence_file(case_id, investigator, file, batch_id):
                 "logged": 1,
             })
             db.add_event(case_id, investigator, "Evidence received", f"{filename} | SHA-256={sha256}")
-
-            avg_score = None
-            try:
-                frames, fps, total = forensics.extract_video_frames(data, 10)
-                frame_results = []
-                for frame_number, frame in frames:
-                    fs, rs, _ = forensics.run_ai_detection(frame)
-                    frame_results.append({
-                        "frame": frame_number,
-                        "seconds": round(frame_number / fps, 2) if fps else 0,
-                        "synthetic_score": round(fs, 4),
-                    })
-                if frame_results:
-                    avg_score = sum(r["synthetic_score"] for r in frame_results) / len(frame_results)
-                    db.update_evidence(evidence_id, {
-                        "video_frame_results": json.dumps(frame_results),
-                        "ai_fake_score": avg_score,
-                    })
-                    db.add_finding(
-                        case_id,
-                        f"Video screening on '{filename}' sampled {len(frame_results)} frames; "
-                        f"average synthetic score {avg_score*100:.1f}%.",
-                    )
-                    db.add_event(case_id, investigator, "AI video analysis", f"sampled_frames={len(frame_results)}")
-            except Exception:
-                pass
-
-            db.add_batch_item(batch_id, case_id, filename, "ok", evidence_id=evidence_id, kind="video",
-                               ai_fake_score=avg_score)
+            return {
+                "kind": "video", "evidence_id": evidence_id, "filename": filename,
+                "video_data": data,
+            }
 
     except Exception as error:
         db.add_batch_item(batch_id, case_id, raw_name, "error", error=str(error)[:300])
+        return None
+
+
+def _run_ai_for_batch(case_id, investigator, batch_id, prepared_items):
+    """Slow path: batches AI inference across every image in this upload in
+    one forward pass per group of 8 (instead of one call per image), then a
+    per-video batched pass over each video's sampled frames. Always ends with
+    exactly one batch_items row per prepared item, even if the AI step fails —
+    the hash/EXIF/ELA results from the fast path already stand regardless."""
+    image_items = [p for p in prepared_items if p["kind"] == "image"]
+    video_items = [p for p in prepared_items if p["kind"] == "video"]
+
+    if image_items:
+        try:
+            results = forensics.run_ai_detection_batch([p["image"] for p in image_items], batch_size=8)
+        except Exception:
+            results = [None] * len(image_items)
+
+        for item, result in zip(image_items, results):
+            evidence_id = item["evidence_id"]
+            filename = item["filename"]
+            if result is None:
+                db.add_batch_item(batch_id, case_id, filename, "ok", evidence_id=evidence_id,
+                                   kind="image", recurrence=item["recurrence"])
+                continue
+            fake_score, real_score, raw_results = result
+            image = item["image"]
+            media_dir = item["media_dir"]
+            sha256 = item["sha256"]
+            faces = forensics.detect_faces(image)
+            overlay_path = None
+            if faces:
+                overlay = forensics.create_face_overlay(image, faces)
+                overlay_name = f"overlay_{sha256[:12]}.jpg"
+                overlay.save(media_dir / overlay_name, format="JPEG", quality=90)
+                overlay_path = str(media_dir / overlay_name)
+            db.update_evidence(evidence_id, {
+                "ai_fake_score": fake_score,
+                "ai_real_score": real_score,
+                "ai_raw_json": json.dumps([{"label": r["label"], "score": r["score"]} for r in raw_results]),
+                "faces_detected": len(faces),
+                "face_overlay_filepath": overlay_path,
+            })
+            db.add_finding(
+                case_id,
+                f"AI screening on '{filename}': synthetic/manipulated score "
+                f"{fake_score*100:.1f}%, authentic score {real_score*100:.1f}%.",
+            )
+            db.add_event(case_id, investigator, "AI image analysis",
+                          f"fake={fake_score:.4f}; real={real_score:.4f}; faces={len(faces)}")
+            db.add_batch_item(batch_id, case_id, filename, "ok", evidence_id=evidence_id, kind="image",
+                               ai_fake_score=fake_score, faces=len(faces), recurrence=item["recurrence"])
+
+    for item in video_items:
+        evidence_id = item["evidence_id"]
+        filename = item["filename"]
+        avg_score = None
+        try:
+            frames, fps, total = forensics.extract_video_frames(item["video_data"], 10)
+            if frames:
+                results = forensics.run_ai_detection_batch([frame for _, frame in frames], batch_size=8)
+                frame_results = [
+                    {
+                        "frame": frame_number,
+                        "seconds": round(frame_number / fps, 2) if fps else 0,
+                        "synthetic_score": round(fake_score, 4),
+                    }
+                    for (frame_number, _), (fake_score, _, _) in zip(frames, results)
+                ]
+                avg_score = sum(r["synthetic_score"] for r in frame_results) / len(frame_results)
+                db.update_evidence(evidence_id, {
+                    "video_frame_results": json.dumps(frame_results),
+                    "ai_fake_score": avg_score,
+                })
+                db.add_finding(
+                    case_id,
+                    f"Video screening on '{filename}' sampled {len(frame_results)} frames; "
+                    f"average synthetic score {avg_score*100:.1f}%.",
+                )
+                db.add_event(case_id, investigator, "AI video analysis", f"sampled_frames={len(frame_results)}")
+        except Exception:
+            pass
+        db.add_batch_item(batch_id, case_id, filename, "ok", evidence_id=evidence_id, kind="video",
+                           ai_fake_score=avg_score)
 
 
 @app.route("/evidence/upload", methods=["POST"])
@@ -264,8 +299,9 @@ def evidence_upload():
         return redirect(url_for("evidence"))
 
     batch_id = uuid.uuid4().hex[:12]
-    for file in files:
-        _process_evidence_file(case_id, investigator, file, batch_id)
+    prepared = [_prepare_evidence_file(case_id, investigator, f, batch_id) for f in files]
+    prepared = [p for p in prepared if p is not None]
+    _run_ai_for_batch(case_id, investigator, batch_id, prepared)
 
     items = db.list_batch_items(batch_id)
     ok_items = [i for i in items if i["status"] == "ok"]

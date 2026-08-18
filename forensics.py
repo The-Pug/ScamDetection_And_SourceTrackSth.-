@@ -140,17 +140,29 @@ def create_face_overlay(image, faces):
     return Image.alpha_composite(result, overlay).convert("RGB")
 
 
+def _select_device():
+    """Auto-detect the best available torch device. Falls back to CPU.
+    NOTE: the MPS (Apple Silicon) and CUDA (NVIDIA) paths are implemented per
+    the documented torch/transformers APIs but have not been hardware-tested —
+    this machine has neither. Verify on the actual target hardware before
+    trusting them in a demo."""
+    import torch
+    if torch.cuda.is_available():
+        return "cuda"
+    if torch.backends.mps.is_available():
+        return "mps"
+    return "cpu"
+
+
 def load_ai_model():
     global _model
     if _model is None:
         from transformers import pipeline
-        _model = pipeline("image-classification", model=MODEL_ID)
+        _model = pipeline("image-classification", model=MODEL_ID, device=_select_device())
     return _model
 
 
-def run_ai_detection(image):
-    model = load_ai_model()
-    results = model(image)
+def _scores_from_results(results):
     fake_score = 0.0
     real_score = 0.0
     for result in results:
@@ -160,7 +172,27 @@ def run_ai_detection(image):
             fake_score = max(fake_score, score)
         if "real" in label or "authentic" in label or label in ["1", "class_1"]:
             real_score = max(real_score, score)
-    return fake_score, real_score, results
+    return fake_score, real_score
+
+
+def run_ai_detection_batch(images, batch_size=8):
+    """Runs AI classification on a list of PIL images in batches (one forward
+    pass per batch instead of per image) — same math as one-at-a-time in eval
+    mode, just faster. Returns a list of (fake_score, real_score, raw_results)
+    in the same order as the input."""
+    if not images:
+        return []
+    model = load_ai_model()
+    all_results = model(list(images), batch_size=batch_size)
+    output = []
+    for results in all_results:
+        fake_score, real_score = _scores_from_results(results)
+        output.append((fake_score, real_score, results))
+    return output
+
+
+def run_ai_detection(image):
+    return run_ai_detection_batch([image])[0]
 
 
 def extract_video_frames(video_data, number_of_frames=10):
