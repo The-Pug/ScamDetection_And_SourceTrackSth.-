@@ -19,8 +19,21 @@ MEDIA_DIR = BASE_DIR / "instance" / "media"
 ALLOWED_IMAGE = {"jpg", "jpeg", "png", "webp"}
 ALLOWED_VIDEO = {"mp4", "mov", "avi", "mkv"}
 
+def _load_secret_key():
+    env_secret = os.environ.get("TRACELENS_SECRET")
+    if env_secret:
+        return env_secret
+    key_path = BASE_DIR / "instance" / "secret_key"
+    key_path.parent.mkdir(parents=True, exist_ok=True)
+    if key_path.exists():
+        return key_path.read_bytes()
+    key = os.urandom(24)
+    key_path.write_bytes(key)
+    return key
+
+
 app = Flask(__name__)
-app.secret_key = os.environ.get("TRACELENS_SECRET", os.urandom(24))
+app.secret_key = _load_secret_key()
 app.config["MAX_CONTENT_LENGTH"] = 1024 * 1024 * 1024  # 1 GB, to allow whole-folder ingests
 
 db.init_db()

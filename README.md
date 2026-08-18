@@ -3,7 +3,25 @@
 AI media forensics web app — evidence intake, deepfake screening, source tracing,
 and a tamper-evident chain of custody. Flask backend, plain HTML/CSS/JS frontend.
 
-## Run it
+## Run it (Docker — recommended for the demo)
+
+```
+cd TraceLens
+docker build -t tracelens .
+docker run -p 8000:8000 -v "$(pwd)/instance:/app/instance" tracelens
+```
+
+Open http://127.0.0.1:8000. The AI model is baked into the image at build time, so
+the container works offline at runtime — no download during the actual demo. The
+`-v` volume mount is what makes case data, evidence files, and the custody log
+survive container restarts/rebuilds — don't drop it. Runs on gunicorn with 4 threads,
+so multiple people can use it at once without blocking each other. Any laptop with
+Docker installed can run this identically — copy the repo over (or `git clone`) and
+run the two commands above.
+
+If `docker compose` is available, `docker compose up --build` does the same thing.
+
+## Run it (without Docker)
 
 ```
 cd TraceLens
@@ -14,6 +32,9 @@ uv pip install -r requirements.txt --python .venv/bin/python   # first time only
 
 Open http://127.0.0.1:5000 — first AI analysis on a fresh machine will download the
 classifier model from Hugging Face (~1-2 min), then it's cached locally and fast.
+This runs Flask's single-threaded dev server, not gunicorn — fine for solo use,
+but two people clicking around at once will block each other. Use Docker for the
+actual demo.
 
 ## What's real vs. what's a prototype
 

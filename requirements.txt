@@ -6,3 +6,4 @@ opencv-python-headless<5
 transformers
 torch
 reportlab
+gunicorn
