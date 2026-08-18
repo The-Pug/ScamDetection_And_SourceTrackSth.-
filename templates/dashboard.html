@@ -1,0 +1,45 @@
+{% extends "base.html" %}
+{% block title_suffix %} — Dashboard{% endblock %}
+{% block content %}
+<h1 class="page-title">Investigation Dashboard</h1>
+<p class="page-sub">Case {{ case_id }} · Investigator {{ investigator }}</p>
+
+<div class="grid grid-4 section">
+  <div class="stat"><div class="stat-value">{{ stats.evidence }}</div><div class="stat-label">Evidence Items</div></div>
+  <div class="stat"><div class="stat-value">{{ stats.ai_analyses }}</div><div class="stat-label">AI Analyses</div></div>
+  <div class="stat"><div class="stat-value">{{ stats.sources }}</div><div class="stat-label">Sources</div></div>
+  <div class="stat"><div class="stat-value">{{ stats.custody_events }}</div><div class="stat-label">Custody Events</div></div>
+</div>
+
+<div class="card section">
+  <h3>Workflow</h3>
+  <p style="margin:0;color:var(--text-dim);font-size:14px;">Preserve → Hash → Inspect → AI Screen → Trace → Review → Report</p>
+</div>
+
+<div class="card section">
+  <h3>Chain of Custody Integrity</h3>
+  <div class="chain-status">
+    <span class="chain-dot {{ 'ok' if chain_ok else 'bad' }}"></span>
+    {% if chain_ok %}
+      Hash chain intact — no retroactive edits detected across {{ stats.custody_events }} event(s).
+    {% else %}
+      Chain broken at event #{{ broken_at }} — log may have been tampered with or edited out of band.
+    {% endif %}
+  </div>
+</div>
+
+<div class="section">
+  <div class="section-title">Current Findings</div>
+  {% if findings %}
+    {% for f in findings %}
+      <div class="card" style="margin-bottom:10px;">{{ f.text }}<div class="hint">{{ f.time }}</div></div>
+    {% endfor %}
+  {% else %}
+    <div class="empty">No findings yet. Upload evidence and run AI analysis to generate findings.</div>
+  {% endif %}
+</div>
+
+<div class="flash flash-error" style="background:rgba(227,179,65,.1);border-color:rgba(227,179,65,.3);color:var(--amber);">
+  AI results are advisory screening signals, not standalone forensic proof.
+</div>
+{% endblock %}

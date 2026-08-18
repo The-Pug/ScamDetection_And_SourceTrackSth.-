@@ -1,0 +1,48 @@
+{% extends "base.html" %}
+{% block title_suffix %} — Evidence{% endblock %}
+{% block content %}
+<h1 class="page-title">Evidence Intake</h1>
+<p class="page-sub">Upload authorized image/video evidence — one file, several files, or a whole folder. Every item is hashed, screened by the AI model, and checked for recurrence automatically.</p>
+
+<div class="section">
+  <div class="dropzone" id="dropzone">
+    <div style="font-size:28px;margin-bottom:8px;">⛃</div>
+    <div class="dz-label">Drag files or an entire folder here</div>
+    <div class="hint">or</div>
+    <div class="dz-buttons">
+      <button type="button" class="btn btn-ghost" id="pick-files-btn">Select Files</button>
+      <button type="button" class="btn btn-ghost" id="pick-folder-btn">Select Folder</button>
+    </div>
+  </div>
+  <input type="file" id="files-input" multiple accept=".jpg,.jpeg,.png,.webp,.mp4,.mov,.avi,.mkv" style="display:none">
+  <input type="file" id="folder-input" webkitdirectory multiple style="display:none">
+  <div id="upload-status" class="hint" style="margin-top:10px;"></div>
+</div>
+
+<div class="divider"></div>
+
+<div class="section-title">Case Evidence ({{ evidence_list|length }})</div>
+{% if evidence_list %}
+  {% for item in evidence_list %}
+  <a href="{{ url_for('evidence_detail', evidence_id=item.id) }}" style="text-decoration:none;color:inherit;">
+    <div class="evidence-card">
+      {% if item.kind == 'image' %}
+        <img src="{{ url_for('media', evidence_id=item.id, kind='original') }}" alt="">
+      {% else %}
+        <div class="ph-icon">▶</div>
+      {% endif %}
+      <div class="meta">
+        <div class="name">{{ item.filename }}</div>
+        <div class="sub mono">{{ item.sha256[:24] }}…</div>
+        <div class="sub">{{ item.received_at }} · {{ (item.bytes/1024)|round(1) }} KB
+          {% if item.logged %}<span class="badge badge-ok">Logged</span>{% else %}<span class="badge badge-neutral">Not logged</span>{% endif %}
+          {% if item.ai_fake_score is not none %}<span class="badge badge-warn">AI screened</span>{% endif %}
+        </div>
+      </div>
+    </div>
+  </a>
+  {% endfor %}
+{% else %}
+  <div class="empty">No evidence uploaded yet for this case.</div>
+{% endif %}
+{% endblock %}

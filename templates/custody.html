@@ -1,0 +1,56 @@
+{% extends "base.html" %}
+{% block title_suffix %} — Chain of Custody{% endblock %}
+{% block content %}
+<h1 class="page-title">Chain of Custody</h1>
+<p class="page-sub">Every event's hash incorporates the previous event's hash — a retroactive edit anywhere in the log breaks the chain visibly.</p>
+
+<div class="card section">
+  <div class="chain-status">
+    <span class="chain-dot {{ 'ok' if chain_ok else 'bad' }}"></span>
+    {% if chain_ok %}
+      Hash chain intact — {{ events|length }} event(s) verified.
+    {% else %}
+      Chain broken at event #{{ broken_at }} — investigate immediately.
+    {% endif %}
+  </div>
+</div>
+
+<form method="post" class="card section">
+  <h3>Add Custody Event</h3>
+  <div class="form-row">
+    <label>Event Type</label>
+    <select name="action">
+      <option>Evidence received</option>
+      <option>Hash calculated</option>
+      <option>Metadata reviewed</option>
+      <option>AI analysis performed</option>
+      <option>Source recorded</option>
+      <option>Human review note</option>
+      <option>Report generated</option>
+    </select>
+  </div>
+  <div class="form-row"><label>Event Details</label><input type="text" name="details"></div>
+  <button class="btn" type="submit">Add Custody Event</button>
+</form>
+
+<div class="section-title">Event Log ({{ events|length }})
+  <a href="{{ url_for('custody_export') }}" class="btn btn-ghost" style="float:right;font-size:12.5px;padding:6px 12px;">Download CSV</a>
+</div>
+{% if events %}
+  <div class="table-wrap section">
+    <table>
+      <tr><th>Time</th><th>Action</th><th>Details</th><th>Event Hash</th></tr>
+      {% for e in events %}
+      <tr>
+        <td style="white-space:nowrap;">{{ e.time }}</td>
+        <td>{{ e.action }}</td>
+        <td>{{ e.details }}</td>
+        <td class="mono">{{ e.event_hash[:12] }}…</td>
+      </tr>
+      {% endfor %}
+    </table>
+  </div>
+{% else %}
+  <div class="empty">No custody events recorded yet.</div>
+{% endif %}
+{% endblock %}

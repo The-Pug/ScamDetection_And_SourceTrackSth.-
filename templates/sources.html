@@ -1,0 +1,45 @@
+{% extends "base.html" %}
+{% block title_suffix %} — Source Tracing{% endblock %}
+{% block content %}
+<h1 class="page-title">Source Tracing &amp; Provenance</h1>
+<p class="page-sub">Record where this media originated and cross-check perceptual hashes for near-duplicate matches.</p>
+
+<form method="post" class="card section">
+  <h3>Record Provenance</h3>
+  <div class="form-row"><label>Original Source URL</label><input type="text" name="url" placeholder="https://..."></div>
+  <div class="form-row"><label>Post / Source / Evidence ID</label><input type="text" name="source_id"></div>
+  <div class="form-row"><label>Known Source Hash</label><input type="text" name="known_hash"></div>
+  <div class="form-row"><label>Acquisition Notes</label><textarea name="notes"></textarea></div>
+  <button class="btn" type="submit">Record Provenance</button>
+</form>
+
+<div class="section-title">Recorded Sources</div>
+{% if source_list %}
+  <div class="table-wrap section">
+    <table>
+      <tr><th>Time</th><th>URL</th><th>Source ID</th><th>Known Hash</th><th>Notes</th></tr>
+      {% for s in source_list %}
+      <tr>
+        <td>{{ s.time }}</td>
+        <td class="mono">{{ s.url }}</td>
+        <td>{{ s.source_id }}</td>
+        <td class="mono">{{ s.known_hash }}</td>
+        <td>{{ s.notes }}</td>
+      </tr>
+      {% endfor %}
+    </table>
+  </div>
+{% else %}
+  <div class="empty section">No sources recorded yet.</div>
+{% endif %}
+
+<div class="card section">
+  <h3>Perceptual Similarity Calculator</h3>
+  <div class="grid grid-2">
+    <div class="form-row"><label>Perceptual Hash A</label><input type="text" id="hash-a" class="mono" placeholder="hex hash"></div>
+    <div class="form-row"><label>Perceptual Hash B</label><input type="text" id="hash-b" class="mono" placeholder="hex hash"></div>
+  </div>
+  <div id="hamming-result"></div>
+  <p class="hint">Lower Hamming distance indicates greater similarity. Distances up to ~12 (of 256 bits) typically indicate the same underlying image.</p>
+</div>
+{% endblock %}

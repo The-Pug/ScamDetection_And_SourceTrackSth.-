@@ -1,0 +1,35 @@
+{% extends "base.html" %}
+{% block title_suffix %} — AI Analysis{% endblock %}
+{% block content %}
+<h1 class="page-title">AI Media Analysis</h1>
+<p class="page-sub">Pretrained deepfake classifier ({{ 'prithivMLmods/deepfake-detector-model-v1' }}) + face detection. Select an evidence item to run or review AI screening.</p>
+
+{% if evidence_list %}
+  {% for item in evidence_list %}
+  <a href="{{ url_for('evidence_detail', evidence_id=item.id) }}" style="text-decoration:none;color:inherit;">
+    <div class="evidence-card">
+      {% if item.kind == 'image' %}
+        <img src="{{ url_for('media', evidence_id=item.id, kind='original') }}" alt="">
+      {% else %}
+        <div class="ph-icon">▶</div>
+      {% endif %}
+      <div class="meta">
+        <div class="name">{{ item.filename }}</div>
+        {% if item.ai_fake_score is not none %}
+          <div class="sub">
+            <span class="badge {{ 'badge-risk' if item.ai_fake_score > 0.5 else 'badge-ok' }}">
+              synthetic {{ '%.1f'|format(item.ai_fake_score*100) }}%
+            </span>
+          </div>
+        {% else %}
+          <div class="sub"><span class="badge badge-neutral">Not analyzed yet</span></div>
+        {% endif %}
+      </div>
+      <span class="btn btn-ghost">{{ 'View results' if item.ai_fake_score is not none else 'Run analysis' }}</span>
+    </div>
+  </a>
+  {% endfor %}
+{% else %}
+  <div class="empty">No evidence uploaded yet. <a href="{{ url_for('evidence') }}">Upload evidence</a> first.</div>
+{% endif %}
+{% endblock %}

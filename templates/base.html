@@ -1,0 +1,75 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>TraceLens{% block title_suffix %}{% endblock %} — Digital Media Forensics</title>
+<link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
+</head>
+<body>
+<div class="shell">
+  <aside class="sidebar">
+    <div class="brand">
+      <span class="brand-mark">◈</span>
+      <div>
+        <div class="brand-name">TraceLens</div>
+        <div class="brand-sub">AI Media Forensics</div>
+      </div>
+    </div>
+
+    <nav class="nav">
+      <a href="{{ url_for('dashboard') }}" class="{{ 'active' if request.endpoint=='dashboard' }}">
+        <span class="nav-ic">▣</span> Dashboard
+      </a>
+      <a href="{{ url_for('evidence') }}" class="{{ 'active' if request.endpoint in ['evidence','evidence_detail'] }}">
+        <span class="nav-ic">⛃</span> Evidence
+        <span class="nav-count">{{ nav_counts.evidence }}</span>
+      </a>
+      <a href="{{ url_for('ai_analysis') }}" class="{{ 'active' if request.endpoint=='ai_analysis' }}">
+        <span class="nav-ic">◎</span> AI Analysis
+      </a>
+      <a href="{{ url_for('sources') }}" class="{{ 'active' if request.endpoint=='sources' }}">
+        <span class="nav-ic">⛓</span> Source Tracing
+        <span class="nav-count">{{ nav_counts.sources }}</span>
+      </a>
+      <a href="{{ url_for('custody') }}" class="{{ 'active' if request.endpoint=='custody' }}">
+        <span class="nav-ic">⏱</span> Chain of Custody
+        <span class="nav-count">{{ nav_counts.events }}</span>
+      </a>
+      <a href="{{ url_for('report') }}" class="{{ 'active' if request.endpoint=='report' }}">
+        <span class="nav-ic">▤</span> Report
+      </a>
+    </nav>
+
+    <form class="case-form" method="post" action="{{ url_for('set_case') }}">
+      <label>Case ID
+        <input type="text" name="case_id" value="{{ case_id }}" list="case-list">
+      </label>
+      <datalist id="case-list">
+        {% for c in all_cases %}<option value="{{ c.case_id }}">{% endfor %}
+      </datalist>
+      <label>Investigator
+        <input type="text" name="investigator" value="{{ investigator }}">
+      </label>
+      <button type="submit">Set Case</button>
+    </form>
+
+    <div class="sidebar-foot">Advisory tool — AI results require qualified human review.</div>
+  </aside>
+
+  <main class="main">
+    {% with messages = get_flashed_messages(with_categories=true) %}
+      {% if messages %}
+        <div class="flashes">
+          {% for category, message in messages %}
+            <div class="flash flash-{{ category }}">{{ message }}</div>
+          {% endfor %}
+        </div>
+      {% endif %}
+    {% endwith %}
+    {% block content %}{% endblock %}
+  </main>
+</div>
+<script src="{{ url_for('static', filename='js/main.js') }}"></script>
+</body>
+</html>

@@ -1,0 +1,129 @@
+{% extends "base.html" %}
+{% block title_suffix %} — {{ item.filename }}{% endblock %}
+{% block content %}
+<h1 class="page-title">{{ item.filename }}</h1>
+<p class="page-sub">
+  Received {{ item.received_at }}
+  {% if item.logged %}<span class="badge badge-ok">Logged to custody</span>{% else %}<span class="badge badge-neutral">Not yet logged</span>{% endif %}
+</p>
+
+<div class="card section">
+  <h3>Fingerprint</h3>
+  <div class="mono">{{ item.sha256 }}</div>
+  {% if not item.logged %}
+  <form method="post" action="{{ url_for('evidence_log', evidence_id=item.id) }}" style="margin-top:12px;">
+    <button class="btn" type="submit">Record Evidence Intake to Chain of Custody</button>
+  </form>
+  {% endif %}
+</div>
+
+{% if item.kind == 'image' %}
+<div class="grid grid-2 section">
+  <div class="card media-preview">
+    <img src="{{ url_for('media', evidence_id=item.id, kind='original') }}" alt="">
+    <div class="media-caption">Original Evidence — {{ item.width }} × {{ item.height }}</div>
+  </div>
+  <div class="card media-preview">
+    <img src="{{ url_for('media', evidence_id=item.id, kind='ela') }}" alt="">
+    <div class="media-caption">ELA Review Aid — score {{ '%.2f'|format(item.ela_score) }}</div>
+  </div>
+</div>
+
+<div class="grid grid-3 section">
+  <div class="stat"><div class="stat-value">{{ item.width }}×{{ item.height }}</div><div class="stat-label">Resolution</div></div>
+  <div class="stat"><div class="stat-value" style="font-size:15px;" class="mono">{{ item.phash[:16] }}…</div><div class="stat-label">Perceptual Hash</div></div>
+  <div class="stat"><div class="stat-value">{{ '%.2f'|format(item.ela_score) }}</div><div class="stat-label">ELA Score</div></div>
+</div>
+
+<div class="grid grid-2 section">
+  <div class="card">
+    <h3>EXIF / Metadata</h3>
+    {% if metadata %}
+      <table>
+        {% for k, v in metadata.items() %}
+        <tr><td>{{ k }}</td><td>{{ v }}</td></tr>
+        {% endfor %}
+      </table>
+    {% else %}
+      <div class="empty">No EXIF metadata found.</div>
+    {% endif %}
+  </div>
+  <div class="card">
+    <h3>Forensic Indicators — score {{ item.forensic_score }}</h3>
+    <div class="score-bar"><div style="width:{{ item.forensic_score }}%;background:{{ 'var(--red)' if item.forensic_score > 50 else ('var(--amber)' if item.forensic_score > 20 else 'var(--green)') }};"></div></div>
+    <ul style="margin:14px 0 0;padding-left:18px;color:var(--text-dim);font-size:13.5px;">
+      {% for r in reasons %}<li>{{ r }}</li>{% endfor %}
+    </ul>
+  </div>
+</div>
+
+<div class="card section">
+  <h3>Recurrence — Source Tracing</h3>
+  {% if matches %}
+    <p style="font-size:13.5px;color:var(--text-dim);">This image's perceptual hash matches {{ matches|length }} other record(s) already in the system:</p>
+    <div class="table-wrap">
+      <table>
+        <tr><th>Filename</th><th>Case</th><th>Distance</th><th>Seen</th></tr>
+        {% for m in matches %}
+        <tr>
+          <td>{{ m.filename }}</td>
+          <td>{{ m.case_id }}</td>
+          <td><span class="badge {{ 'badge-warn' if m.distance <= 6 else 'badge-neutral' }}">{{ m.distance }}</span></td>
+          <td>{{ m.received_at }}</td>
+        </tr>
+        {% endfor %}
+      </table>
+    </div>
+  {% else %}
+    <div class="empty">No matching perceptual hashes found elsewhere in the system yet.</div>
+  {% endif %}
+</div>
+{% else %}
+<div class="card section media-preview">
+  <video controls src="{{ url_for('media', evidence_id=item.id, kind='original') }}"></video>
+</div>
+{% endif %}
+
+<div class="card section">
+  <h3>AI Analysis</h3>
+  {% if item.ai_fake_score is not none %}
+    {% if item.kind == 'image' %}
+      <div class="grid grid-2">
+        <div class="stat"><div class="stat-value">{{ '%.1f'|format(item.ai_fake_score*100) }}%</div><div class="stat-label">Synthetic / Fake</div></div>
+        <div class="stat"><div class="stat-value">{{ '%.1f'|format(item.ai_real_score*100) }}%</div><div class="stat-label">Real / Authentic</div></div>
+      </div>
+      <p style="margin-top:14px;font-size:13.5px;">Detected face regions: <strong>{{ item.faces_detected }}</strong></p>
+      {% if item.face_overlay_filepath %}
+        <div class="media-preview" style="max-width:480px;">
+          <img src="{{ url_for('media', evidence_id=item.id, kind='overlay') }}" alt="">
+          <div class="media-caption">Face-region analysis</div>
+        </div>
+      {% endif %}
+      {% if ai_raw %}
+        <div class="table-wrap" style="margin-top:14px;">
+          <table>
+            <tr><th>Label</th><th>Score</th></tr>
+            {% for r in ai_raw %}<tr><td>{{ r.label }}</td><td>{{ '%.4f'|format(r.score) }}</td></tr>{% endfor %}
+          </table>
+        </div>
+      {% endif %}
+    {% else %}
+      <p style="font-size:13.5px;">Average synthetic score across sampled frames: <strong>{{ '%.1f'|format(item.ai_fake_score*100) }}%</strong></p>
+      {% if video_frames %}
+        <div class="table-wrap">
+          <table>
+            <tr><th>Frame</th><th>Time (s)</th><th>Synthetic Score</th></tr>
+            {% for f in video_frames %}<tr><td>{{ f.frame }}</td><td>{{ f.seconds }}</td><td>{{ '%.1f'|format(f.synthetic_score*100) }}%</td></tr>{% endfor %}
+          </table>
+        </div>
+      {% endif %}
+    {% endif %}
+  {% else %}
+    <p style="font-size:13.5px;color:var(--text-dim);margin-bottom:12px;">No AI analysis run yet.</p>
+    <form method="post" action="{{ url_for('ai_run', evidence_id=item.id) }}">
+      <button class="btn" type="submit">Run AI {{ 'Image Detector' if item.kind == 'image' else 'Video Frame Analysis' }}</button>
+    </form>
+  {% endif %}
+  <p class="hint">AI output is an advisory screening signal and should not be treated as proof by itself.</p>
+</div>
+{% endblock %}

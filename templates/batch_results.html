@@ -1,0 +1,45 @@
+{% extends "base.html" %}
+{% block title_suffix %} — Batch Results{% endblock %}
+{% block content %}
+<h1 class="page-title">Batch Ingest Results</h1>
+<p class="page-sub">Batch {{ batch_id }} — every image was hashed, screened, and checked for recurrence automatically.</p>
+
+<div class="grid grid-4 section">
+  <div class="stat"><div class="stat-value">{{ ok_items|length }}</div><div class="stat-label">Processed</div></div>
+  <div class="stat"><div class="stat-value">{{ skipped_items|length }}</div><div class="stat-label">Skipped</div></div>
+  <div class="stat"><div class="stat-value">{{ error_items|length }}</div><div class="stat-label">Failed</div></div>
+  <div class="stat"><div class="stat-value">{{ recurrence_flagged }}</div><div class="stat-label">Recurrence Flags</div></div>
+</div>
+
+<div class="table-wrap section">
+  <table>
+    <tr><th>File</th><th>Type</th><th>AI Score</th><th>Faces</th><th>Recurrence</th><th></th></tr>
+    {% for r in ok_items %}
+    <tr>
+      <td>{{ r.filename }}</td>
+      <td>{{ r.kind }}</td>
+      <td>
+        {% if r.ai_fake_score is not none %}
+          <span class="badge {{ 'badge-risk' if r.ai_fake_score > 0.5 else 'badge-ok' }}">{{ '%.1f'|format(r.ai_fake_score*100) }}% synthetic</span>
+        {% else %}
+          <span class="badge badge-neutral">n/a</span>
+        {% endif %}
+      </td>
+      <td>{{ r.faces if r.faces is not none else '—' }}</td>
+      <td>
+        {% if r.recurrence %}<span class="badge badge-warn">{{ r.recurrence }} match(es)</span>{% else %}—{% endif %}
+      </td>
+      <td><a href="{{ url_for('evidence_detail', evidence_id=r.evidence_id) }}" class="btn btn-ghost" style="padding:4px 10px;font-size:12px;">View</a></td>
+    </tr>
+    {% endfor %}
+    {% for r in skipped_items %}
+    <tr><td>{{ r.filename }}</td><td colspan="5"><span class="badge badge-neutral">Skipped — unsupported file type</span></td></tr>
+    {% endfor %}
+    {% for r in error_items %}
+    <tr><td>{{ r.filename }}</td><td colspan="5"><span class="badge badge-risk">Failed — {{ r.error }}</span></td></tr>
+    {% endfor %}
+  </table>
+</div>
+
+<a class="btn btn-ghost" href="{{ url_for('evidence') }}">Back to Evidence</a>
+{% endblock %}
