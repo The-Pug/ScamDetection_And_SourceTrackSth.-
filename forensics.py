@@ -57,27 +57,45 @@ def perform_ela(image, quality=90):
 
 
 def forensic_indicators(image, metadata):
+    """Returns (score, indicators). Each indicator is {"text", "risk"} — only
+    signals that are actually discriminative move the score; near-universal
+    conditions (e.g. missing EXIF, which almost every image that's passed
+    through WhatsApp/Instagram/Telegram will show regardless of authenticity)
+    are surfaced as context, not scored as suspicious."""
     score = 0
-    reasons = []
-    if not metadata:
-        score += 15
-        reasons.append("No EXIF metadata found.")
+    indicators = []
+
+    if metadata:
+        indicators.append({"text": "EXIF metadata is present.", "risk": False})
+    else:
+        indicators.append({
+            "text": "No EXIF metadata found. Not scored as suspicious on its own — "
+                    "most messaging and social apps (WhatsApp, Instagram, Telegram) "
+                    "strip EXIF from nearly everything they touch, genuine or not.",
+            "risk": False,
+        })
+
     software = str(metadata.get("Software", "")).lower()
     editing_tools = ["photoshop", "gimp", "canva", "lightroom", "snapseed"]
-    for tool in editing_tools:
-        if tool in software:
-            score += 20
-            reasons.append("Editing software metadata detected: " + metadata.get("Software"))
-            break
-    if metadata.get("DateTimeOriginal"):
-        reasons.append("Original capture timestamp is present.")
-    else:
-        score += 5
-        reasons.append("Original capture timestamp is absent.")
+    matched_tool = next((tool for tool in editing_tools if tool in software), None)
+    if matched_tool:
+        score += 35
+        indicators.append({
+            "text": f"Editing software metadata detected: {metadata.get('Software')}. "
+                    "The strongest signal this function produces — genuine capture "
+                    "devices don't normally stamp this.",
+            "risk": True,
+        })
+
     if image.width < 512 or image.height < 512:
-        score += 5
-        reasons.append("Low resolution source.")
-    return min(score, 100), reasons
+        score += 10
+        indicators.append({
+            "text": "Low resolution source — weak, circumstantial signal (consistent "
+                    "with repeated re-saving, but also just true of small originals).",
+            "risk": True,
+        })
+
+    return min(score, 100), indicators
 
 
 def validate_source_url(url):

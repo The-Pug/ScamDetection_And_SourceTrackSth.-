@@ -51,8 +51,12 @@
   <div class="card">
     <h3>Forensic Indicators — score {{ item.forensic_score }}</h3>
     <div class="score-bar"><div style="width:{{ item.forensic_score }}%;background:{{ 'var(--red)' if item.forensic_score > 50 else ('var(--amber)' if item.forensic_score > 20 else 'var(--green)') }};"></div></div>
-    <ul style="margin:14px 0 0;padding-left:18px;color:var(--text-dim);font-size:13.5px;">
-      {% for r in reasons %}<li>{{ r }}</li>{% endfor %}
+    <ul style="margin:14px 0 0;padding-left:18px;font-size:13.5px;">
+      {% for r in reasons %}
+        <li style="color:{{ 'var(--amber)' if r.risk else 'var(--text-dim)' }};">
+          {{ r.text }}{% if not r.risk %} <span class="badge badge-neutral" style="font-size:10px;">context, not scored</span>{% endif %}
+        </li>
+      {% endfor %}
     </ul>
   </div>
 </div>
@@ -87,6 +91,16 @@
 <div class="card section">
   <h3>AI Analysis</h3>
   {% if item.ai_fake_score is not none %}
+    <p class="hint" style="margin-bottom:14px;">Single pretrained classifier, accuracy not independently validated —
+      one signal to weigh alongside the others on this page, not a verdict on its own. Tuned for
+      photographic face/human content; unreliable outside that domain.</p>
+    {% if item.kind == 'image' and item.faces_detected == 0 %}
+      <div class="flash flash-error" style="margin-bottom:14px;background:rgba(227,179,65,.1);border-color:rgba(227,179,65,.3);color:var(--amber);">
+        No faces detected in this image — this classifier is calibrated on photographic faces.
+        Screenshots, documents, and graphics fall outside what it was built to judge; this score
+        is likely noise and should be disregarded rather than trusted.
+      </div>
+    {% endif %}
     {% if item.kind == 'image' %}
       <div class="grid grid-2">
         <div class="stat"><div class="stat-value">{{ '%.1f'|format(item.ai_fake_score*100) }}%</div><div class="stat-label">Synthetic / Fake</div></div>
