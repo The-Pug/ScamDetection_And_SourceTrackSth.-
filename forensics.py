@@ -957,7 +957,21 @@ def compute_priority(item, matches, web_detection, video_temporal=None, scene_la
     return {"score": round(score, 1), "level": level, "components": components}
 
 
-def generate_pdf_report(case_id, investigator, evidence_list, events, findings, sources):
+def _truncate_words(text, limit):
+    if len(text) <= limit:
+        return text
+    return text[:limit].rsplit(" ", 1)[0].rstrip(".,;:") + "…"
+
+
+def generate_pdf_report(case_id, investigator, report_items, events, sources, chain_ok=None, broken_at=None):
+    """One row per piece of media, every check's result in that same row —
+    replaces the old layout of separate document-wide tables (evidence facts,
+    findings, custody log) that forced a reader to cross-reference the same
+    filename across three unrelated places to see the whole picture for one
+    file. `report_items` is a list of {"item", "priority", "matches",
+    "web_detection", "video_temporal", "reasons"} — exactly what
+    evidence_detail() computes per item, reused here instead of duplicated.
+    """
     from reportlab.lib.pagesizes import A4
     from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, Table, TableStyle
     from reportlab.lib import colors
@@ -970,44 +984,103 @@ def generate_pdf_report(case_id, investigator, evidence_list, events, findings, 
         topMargin=15 * mm, bottomMargin=15 * mm,
     )
     styles = getSampleStyleSheet()
+    cell_style = styles["BodyText"].clone("cell")
+    cell_style.fontSize = 7.5
+    cell_style.leading = 9
+
+    def cell(text):
+        return Paragraph(str(text), cell_style)
+
+    level_counts = {"HIGH": 0, "MEDIUM": 0, "LOW": 0}
+    for row in report_items:
+        if row["priority"]:
+            level_counts[row["priority"]["level"]] += 1
+
     story = [
         Paragraph("TraceLens — Digital Media Forensic Report", styles["Title"]),
         Spacer(1, 10),
         Paragraph(f"Case ID: {case_id}", styles["BodyText"]),
         Paragraph(f"Investigator: {investigator}", styles["BodyText"]),
+        Paragraph(f"Generated: {datetime.now(timezone.utc).strftime('%Y-%m-%d %H:%M UTC')}", styles["BodyText"]),
+        Spacer(1, 10),
+        Paragraph(
+            f"{len(report_items)} evidence item(s) — {level_counts['HIGH']} HIGH, "
+            f"{level_counts['MEDIUM']} MEDIUM, {level_counts['LOW']} LOW priority. "
+            f"{len(sources)} source claim(s) checked.",
+            styles["BodyText"],
+        ),
         Spacer(1, 15),
-        Paragraph("Evidence", styles["Heading2"]),
+        Paragraph("Evidence — results grouped per file", styles["Heading2"]),
+        Paragraph(
+            "Every check run against a file is shown on that file's own row, instead of "
+            "spread across separate tables — no cross-referencing filenames by hand.",
+            styles["BodyText"],
+        ),
+        Spacer(1, 6),
     ]
 
-    if evidence_list:
-        evidence_rows = [["Filename", "SHA-256", "pHash", "ELA", "Forensic Score"]]
-        for item in evidence_list:
-            evidence_rows.append([
-                str(item.get("filename", ""))[:40],
-                str(item.get("sha256", ""))[:20] + "...",
-                str(item.get("phash", ""))[:20] + ("..." if item.get("phash") else ""),
-                f"{item.get('ela_score'):.2f}" if item.get("ela_score") is not None else "-",
-                str(item.get("forensic_score", "-")),
+    if report_items:
+        header = ["File", "Priority", "Editing signs", "AI opinion", "Recurrence", "Web", "Top signal"]
+        rows = [header]
+        for row in report_items:
+            item, priority, matches, web_detection, video_temporal, reasons = (
+                row["item"], row["priority"], row["matches"], row["web_detection"],
+                row["video_temporal"], row["reasons"],
+            )
+            priority_cell = f"{priority['score']}/100 {priority['level']}" if priority else "-"
+
+            if item["kind"] == "image":
+                editing_cell = str(item.get("forensic_score", "-"))
+            elif video_temporal:
+                editing_cell = f"{video_temporal.get('consistency_score', '-')} (frame consistency)"
+            else:
+                editing_cell = "-"
+
+            if item.get("ai_fake_score") is None:
+                ai_cell = "not run"
+            elif item["kind"] == "image" and not item.get("faces_detected"):
+                ai_cell = "excluded (no face)"
+            else:
+                ai_cell = f"{item['ai_fake_score']*100:.0f}% synthetic"
+
+            recurrence_cell = f"{len(matches)} match(es)" if matches else "none"
+
+            if web_detection and web_detection.get("error"):
+                web_cell = "lookup failed"
+            elif web_detection and (web_detection.get("full_matches") or web_detection.get("partial_matches") or web_detection.get("pages")):
+                web_cell = "found elsewhere"
+            elif web_detection:
+                web_cell = "not found"
+            else:
+                web_cell = "not run"
+
+            risky_reasons = [r["text"] for r in reasons if r.get("risk")]
+            top_signal = risky_reasons[0] if risky_reasons else "No red flags from pixel forensics."
+
+            rows.append([
+                cell(str(item.get("filename", ""))[:45]),
+                cell(priority_cell),
+                cell(editing_cell),
+                cell(ai_cell),
+                cell(recurrence_cell),
+                cell(web_cell),
+                cell(_truncate_words(top_signal, 160)),
             ])
-        evidence_table = Table(evidence_rows, colWidths=[45 * mm, 40 * mm, 40 * mm, 20 * mm, 25 * mm])
+
+        evidence_table = Table(
+            rows, colWidths=[32 * mm, 18 * mm, 20 * mm, 22 * mm, 18 * mm, 18 * mm, 52 * mm], repeatRows=1,
+        )
         evidence_table.setStyle(TableStyle([
             ("GRID", (0, 0), (-1, -1), 0.4, colors.grey),
             ("BACKGROUND", (0, 0), (-1, 0), colors.lightgrey),
+            ("FONTSIZE", (0, 0), (-1, 0), 7.5),
             ("VALIGN", (0, 0), (-1, -1), "TOP"),
-            ("FONTSIZE", (0, 0), (-1, -1), 7),
         ]))
         story.append(evidence_table)
     else:
         story.append(Paragraph("No evidence recorded.", styles["BodyText"]))
 
-    story += [Spacer(1, 15), Paragraph("Findings", styles["Heading2"])]
-    if findings:
-        for finding in findings:
-            story.append(Paragraph("• " + str(finding), styles["BodyText"]))
-    else:
-        story.append(Paragraph("No findings recorded.", styles["BodyText"]))
-
-    story += [Spacer(1, 15), Paragraph("Source Tracing", styles["Heading2"])]
+    story += [Spacer(1, 15), Paragraph("Source Tracing claims", styles["Heading2"])]
     if sources:
         source_rows = [["Source ID", "URL", "Known Hash", "Notes"]] + [
             [str(s.get("source_id", ""))[:25], str(s.get("url", ""))[:40],
@@ -1025,28 +1098,25 @@ def generate_pdf_report(case_id, investigator, evidence_list, events, findings, 
     else:
         story.append(Paragraph("No sources recorded.", styles["BodyText"]))
 
-    story += [Spacer(1, 15), Paragraph("Chain of Custody", styles["Heading2"])]
-    custody_rows = [["Time", "Action", "Details", "Event Hash"]] + [
-        [event.get("time", ""), event.get("action", ""), str(event.get("details", ""))[:60],
-         str(event.get("event_hash", ""))[:16] + "..."]
-        for event in events
-    ]
-    custody_table = Table(custody_rows, colWidths=[30 * mm, 35 * mm, 60 * mm, 30 * mm])
-    custody_table.setStyle(TableStyle([
-        ("GRID", (0, 0), (-1, -1), 0.4, colors.grey),
-        ("BACKGROUND", (0, 0), (-1, 0), colors.lightgrey),
-        ("VALIGN", (0, 0), (-1, -1), "TOP"),
-        ("FONTSIZE", (0, 0), (-1, -1), 7),
-    ]))
-    story.append(custody_table)
+    story += [Spacer(1, 15), Paragraph("Activity log integrity", styles["Heading2"])]
+    if chain_ok is None:
+        integrity_line = f"{len(events)} event(s) logged."
+    elif chain_ok:
+        integrity_line = f"Intact — {len(events)} event(s) verified, nothing altered."
+    else:
+        integrity_line = f"BROKEN at event #{broken_at} — the log was changed after the fact. Investigate immediately."
+    story.append(Paragraph(
+        integrity_line + " Full play-by-play (every timestamped action, hash-chained so a retroactive "
+        "edit is detectable) is available from the app's Activity Log page or its CSV export — not "
+        "duplicated here since it's already reflected per-file above.",
+        styles["BodyText"],
+    ))
 
     story += [
         Spacer(1, 15),
         Paragraph(
             "AI results are screening signals and require qualified human forensic review "
-            "before evidentiary conclusions. Chain-of-custody entries are hash-chained "
-            "(each event's hash incorporates the previous event's hash) so any retroactive "
-            "edit to this log is detectable.",
+            "before evidentiary conclusions.",
             styles["BodyText"],
         ),
     ]

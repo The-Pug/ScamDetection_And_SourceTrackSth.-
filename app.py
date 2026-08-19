@@ -587,10 +587,26 @@ def report_generate():
     case_id, investigator = current_case()
     evidence_list = db.list_evidence(case_id)
     events = db.list_events(case_id)
-    findings = [f["text"] for f in db.list_findings(case_id)]
     sources_list = db.list_sources(case_id)
 
-    pdf_bytes = forensics.generate_pdf_report(case_id, investigator, evidence_list, events, findings, sources_list)
+    report_items = []
+    for item in evidence_list:
+        web_detection = json.loads(item["web_detection_json"]) if item.get("web_detection_json") else None
+        scene_labels = json.loads(item["scene_labels_json"]) if item.get("scene_labels_json") else None
+        video_temporal = json.loads(item["video_temporal_json"]) if item.get("video_temporal_json") else None
+        reasons = json.loads(item["forensic_reasons"]) if item.get("forensic_reasons") else []
+        matches = db.find_phash_matches(item["phash"], item["id"]) if item.get("phash") else []
+        priority = forensics.compute_priority(item, matches, web_detection, video_temporal, scene_labels) \
+            if item.get("ai_fake_score") is not None or item["kind"] == "image" else None
+        report_items.append({
+            "item": item, "priority": priority, "matches": matches,
+            "web_detection": web_detection, "video_temporal": video_temporal, "reasons": reasons,
+        })
+
+    chain_ok, broken_at = db.verify_chain(case_id)
+    pdf_bytes = forensics.generate_pdf_report(
+        case_id, investigator, report_items, events, sources_list, chain_ok, broken_at,
+    )
     db.add_event(case_id, investigator, "Report generated", "PDF report generated.")
     return send_file(
         io.BytesIO(pdf_bytes), mimetype="application/pdf",
