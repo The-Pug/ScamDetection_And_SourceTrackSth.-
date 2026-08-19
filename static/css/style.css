@@ -149,6 +149,19 @@ details.tech summary::before{content:"▸";font-size:11px;color:var(--text-faint
 details.tech[open] summary::before{transform:rotate(90deg);}
 details.tech summary:hover{color:var(--text);}
 
+/* Priority score — the weighted composite of every signal, always with its breakdown visible */
+.priority-head{display:flex;align-items:center;gap:20px;flex-wrap:wrap;margin-bottom:18px;}
+.priority-score{font-size:44px;font-weight:700;line-height:1;color:var(--text);}
+.priority-score span{font-size:18px;font-weight:500;color:var(--text-faint);}
+.priority-breakdown{border-top:1px solid var(--border);padding-top:14px;}
+.priority-row{display:grid;grid-template-columns:minmax(140px,220px) 1fr auto;align-items:center;gap:14px;margin-bottom:4px;}
+.priority-row-label{font-size:13px;font-weight:600;}
+.priority-row-bar{height:6px;border-radius:3px;background:var(--panel-2);overflow:hidden;}
+.priority-row-fill{height:100%;background:var(--accent);border-radius:3px;}
+.priority-row-value{font-size:12.5px;color:var(--text-dim);white-space:nowrap;text-align:right;min-width:80px;}
+.priority-row-value span{color:var(--text-faint);}
+@media(max-width:600px){.priority-row{grid-template-columns:1fr;gap:4px;}}
+
 .stat{
   background:var(--panel);border:1px solid var(--border);border-radius:var(--radius);
   padding:16px 18px;

@@ -388,10 +388,12 @@ def evidence_detail(evidence_id):
     web_detection = json.loads(item["web_detection_json"]) if item.get("web_detection_json") else None
     scene_labels = json.loads(item["scene_labels_json"]) if item.get("scene_labels_json") else None
     matches = db.find_phash_matches(item["phash"], evidence_id) if item.get("phash") else []
+    priority = forensics.compute_priority(item, matches, web_detection, video_temporal) if item.get("ai_fake_score") is not None or item["kind"] == "image" else None
     return render_template(
         "evidence_detail.html", item=item, metadata=metadata, reasons=reasons,
         ai_raw=ai_raw, video_frames=video_frames, video_temporal=video_temporal,
-        landmark=landmark, web_detection=web_detection, scene_labels=scene_labels, matches=matches,
+        landmark=landmark, web_detection=web_detection, scene_labels=scene_labels,
+        matches=matches, priority=priority,
     )
 
 

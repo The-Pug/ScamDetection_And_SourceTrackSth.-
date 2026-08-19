@@ -796,6 +796,94 @@ def analyze_temporal_consistency(video_data, burst_seconds=1.5, num_bursts=3):
     }
 
 
+def compute_priority(item, matches, web_detection, video_temporal=None):
+    """Combines every signal already computed elsewhere on this evidence item
+    into one weighted "how much attention does this deserve" score — not a
+    fake/real probability, deliberately. Blending a 0-100 pixel-forensics
+    score with a binary "found on the web" flag with an AI classifier
+    percentage into a single fake-vs-real number would be false precision;
+    "how much should an investigator look closer" is a question all of those
+    can honestly answer together.
+
+    Weights come directly from what this project has actually measured, not
+    a guess: pixel forensics (noise-consistency etc.) cleanly separated real
+    from AI-generated on the one real test we ran it against, so it gets the
+    heaviest weight. The AI classifier proved unreliable on the same test —
+    it's weighted low, and EXCLUDED entirely (weight 0) on a faceless image,
+    since it's been directly shown to be noise there, not just weak.
+
+    Returns {"score", "level", "components"} where `components` is the full
+    breakdown — every signal's raw points, its weight, and why it does or
+    doesn't count — so the number is never a black box. Nothing here hides
+    a signal; it just says how much each one was trusted to matter.
+    """
+    components = []
+
+    if item.get("kind") == "image":
+        components.append({
+            "label": "Editing signs (pixel forensics)",
+            "why": "The one signal that's actually been shown to separate real from AI-generated on this project's own test data.",
+            "points": item.get("forensic_score") or 0, "weight": 0.40,
+        })
+
+    if item.get("ai_fake_score") is not None:
+        no_face_image = item.get("kind") == "image" and not item.get("faces_detected")
+        if no_face_image:
+            components.append({
+                "label": "AI classifier opinion", "points": None, "weight": 0.0,
+                "why": "Excluded — no face detected, and this classifier has been directly shown to be noise outside human faces, not just weak.",
+            })
+        else:
+            components.append({
+                "label": "AI classifier opinion",
+                "why": "Weighted low on purpose — a single trained model that's shown itself to be confidently wrong before.",
+                "points": round(item["ai_fake_score"] * 100, 1), "weight": 0.15,
+            })
+
+    best_distance = min((m["distance"] for m in matches), default=None) if matches else None
+    components.append({
+        "label": "Matches something already in this case",
+        "why": "A near-identical match already logged is worth a second look, whatever the reason.",
+        "points": 100 if (best_distance is not None and best_distance <= 6) else (45 if matches else 0),
+        "weight": 0.15,
+    })
+
+    if web_detection and not web_detection.get("error"):
+        found = bool(web_detection.get("full_matches") or web_detection.get("partial_matches") or web_detection.get("pages"))
+        components.append({
+            "label": "Already published elsewhere on the web",
+            "why": "Not evidence of AI manipulation by itself — but a recycled/miscaptioned real photo is exactly the pattern this catches.",
+            "points": 100 if found else 0, "weight": 0.15,
+        })
+    else:
+        components.append({
+            "label": "Already published elsewhere on the web", "points": None, "weight": 0.0,
+            "why": "Not run — no Vision API key configured, or the lookup failed.",
+        })
+
+    if video_temporal:
+        total = video_temporal.get("total_transitions") or 0
+        ratio = (video_temporal.get("flagged_count", 0) / total) if total else 0
+        components.append({
+            "label": "Frame-to-frame video glitches",
+            "why": "The one check built specifically to look at change over time in video, instead of scoring frames one at a time.",
+            "points": round(ratio * 100, 1), "weight": 0.40,
+        })
+
+    active = [c for c in components if c["points"] is not None]
+    total_weight = sum(c["weight"] for c in active) or 1
+    score = sum(c["points"] * c["weight"] for c in active) / total_weight
+
+    if score >= 50:
+        level = "HIGH"
+    elif score >= 20:
+        level = "MEDIUM"
+    else:
+        level = "LOW"
+
+    return {"score": round(score, 1), "level": level, "components": components}
+
+
 def generate_pdf_report(case_id, investigator, evidence_list, events, findings, sources):
     from reportlab.lib.pagesizes import A4
     from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, Table, TableStyle

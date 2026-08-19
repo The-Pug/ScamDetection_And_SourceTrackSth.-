@@ -13,6 +13,33 @@
 </form>
 {% endif %}
 
+{% if priority %}
+<div class="card section">
+  <div class="priority-head">
+    <div class="priority-score">{{ priority.score }}<span>/100</span></div>
+    <div>
+      <span class="pill {{ 'pill-risk' if priority.level=='HIGH' else ('pill-flag' if priority.level=='MEDIUM' else 'pill-clean') }}" style="font-size:13.5px;padding:7px 16px;">
+        {{ priority.level }} priority
+      </span>
+      <p class="hint" style="margin-top:8px;max-width:56ch;">Every check below, combined and weighted by how much this project has
+        actually proven each one to be trustworthy — not a fake/real verdict, just how much this deserves a closer look.</p>
+    </div>
+  </div>
+  <div class="priority-breakdown">
+    {% for c in priority.components %}
+    <div class="priority-row">
+      <div class="priority-row-label">{{ c.label }}</div>
+      <div class="priority-row-bar">{% if c.points is not none %}<div class="priority-row-fill" style="width:{{ c.points }}%;"></div>{% endif %}</div>
+      <div class="priority-row-value">
+        {% if c.points is not none %}{{ c.points }} <span>pts × {{ (c.weight*100)|round(0)|int }}%</span>{% else %}<span>excluded</span>{% endif %}
+      </div>
+    </div>
+    <p class="hint" style="margin:0 0 10px;">{{ c.why }}</p>
+    {% endfor %}
+  </div>
+</div>
+{% endif %}
+
 {% if item.kind == 'image' %}
 <!-- Scan-in-five-seconds summary -->
 <div class="summary-strip">
