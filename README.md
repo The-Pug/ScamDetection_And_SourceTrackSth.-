@@ -77,16 +77,45 @@ against real deepfake footage, only synthetic test cases.
   angle (a known weak spot for vision models); it says "unclear" instead of guessing.
   This describes, it does not judge — the human still makes the actual call.
 
+**Priority score** — every evidence page opens with one weighted number (and a
+LOW/MEDIUM/HIGH badge) combining every signal above. This is deliberately *not* a
+fake/real verdict — it's "how much does this deserve a closer look," because
+blending a 0-100 pixel-forensics score with a binary web-match flag with an AI
+percentage into one fake-probability number would be false precision. The weights
+aren't a guess: pixel forensics carries the most weight (40%) because it's the one
+signal actually shown to separate real from AI-generated on this project's own test
+photos; the AI classifier carries the least (15%), and is excluded entirely (0%) on
+any faceless image, since it's been directly shown to be noise there. Every
+component's raw points, weight, and one-line reasoning are shown inline — nothing
+collapses into a black box.
+
 **Reporting** — one-click PDF case report (evidence table, findings, chain of custody,
 source records) via `reportlab`.
 
+**Frontend** — reorganized around the questions a reviewer actually asks (has this
+been edited? has it been seen before? where/when was it really taken? what does the
+AI think — deliberately last), not a flat list of jargon-labeled cards. Raw
+hashes/EXIF/per-frame tables are still there, just tucked into a collapsible
+"technical details" section instead of competing with the findings. Every section
+opens with a plain one-line "why" instead of assuming the reader already knows why
+the check exists.
+
 ## What's tested live vs. what's a first-pass heuristic
 
-Everything above has been run against real data at least once — this isn't a
-"should work" list. The parts still genuinely open: Direction-1 video thresholds have
+Everything above has been run against real data at least once, including through an
+actual Docker rebuild-and-run of the final code (not just the dev server) — this
+isn't a "should work" list. Genuinely still open: Direction-1 video thresholds have
 only been validated against a synthetic test clip, never real deepfake footage
-(FaceForensics++/Celeb-DF would be the next step); and the whole app has only been
-run via the dev server this session, not rebuilt through Docker with today's changes.
+(FaceForensics++/Celeb-DF would be the next step to close that).
+
+**One real operational thing to know before a demo**: uploading several images at
+once now runs three sequential external API calls per image (landmark detection, web
+search, AI scene labeling) on top of the local pixel forensics — a 3-image batch can
+take a minute or more, mostly waiting on Gemini specifically, which has shown real
+intermittent slowness/503s under load during testing (handled gracefully with one
+retry, but still adds real wall-clock time). It finishes correctly, it's just not
+instant — don't be surprised if a multi-file upload takes longer than a single file
+did earlier in testing.
 
 ## API keys (optional — the app works without them)
 
@@ -141,15 +170,18 @@ evidence files, and the custody log survive restarts/rebuilds — don't drop it.
 image itself. Runs on gunicorn with 4 threads, so multiple people can use it without
 blocking each other.
 
-If `docker compose` is available, `docker compose up --build` does the same thing
-(add `env_file: .env` under the service if you want the keys picked up that way too).
+A `docker-compose.yml` is included, but it hasn't actually been run/tested this
+session (the `docker compose` plugin isn't installed on this dev machine) — the two
+commands above are the verified path. If you do use compose, add `env_file: .env`
+under the service to get the keys picked up.
 
 ## Layout
 
 - `app.py` — Flask routes
 - `forensics.py` — the actual detection/analysis logic: hashing, EXIF, ELA, the
   pixel-forensics signals, face/video analysis, the AI classifier, source tracing
-  (reverse search, landmarks, sun physics), AI scene labels, PDF generation
+  (reverse search, landmarks, sun physics), AI scene labels, the weighted priority
+  score, PDF generation
 - `db.py` — SQLite persistence, chain-of-custody hashing, recurrence lookup
 - `templates/`, `static/` — frontend
 
