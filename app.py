@@ -177,8 +177,6 @@ def _prepare_evidence_file(case_id, investigator, file, batch_id):
                 "received_at": db.current_time(),
                 "logged": 1,
             })
-            db.add_event(case_id, investigator, "Evidence received", f"{filename} | SHA-256={sha256}")
-
             if gps and gps.get("when_utc"):
                 db.add_source(
                     case_id, url="", source_id=filename, known_hash=sha256,
@@ -232,10 +230,9 @@ def _prepare_evidence_file(case_id, investigator, file, batch_id):
                 "received_at": db.current_time(),
                 "logged": 1,
             })
-            db.add_event(case_id, investigator, "Evidence received", f"{filename} | SHA-256={sha256}")
             return {
                 "kind": "video", "evidence_id": evidence_id, "filename": filename,
-                "video_data": data,
+                "video_data": data, "sha256": sha256,
             }
 
     except Exception as error:
@@ -261,14 +258,16 @@ def _run_ai_for_batch(case_id, investigator, batch_id, prepared_items):
         for item, result in zip(image_items, results):
             evidence_id = item["evidence_id"]
             filename = item["filename"]
+            sha256 = item["sha256"]
             if result is None:
+                db.add_event(case_id, investigator, "Evidence received",
+                              f"{filename} | SHA-256={sha256} | AI screening unavailable")
                 db.add_batch_item(batch_id, case_id, filename, "ok", evidence_id=evidence_id,
                                    kind="image", recurrence=item["recurrence"])
                 continue
             fake_score, real_score, raw_results = result
             image = item["image"]
             media_dir = item["media_dir"]
-            sha256 = item["sha256"]
             faces = forensics.detect_faces(image)
             overlay_path = None
             if faces:
@@ -288,14 +287,15 @@ def _run_ai_for_batch(case_id, investigator, batch_id, prepared_items):
                 f"AI screening on '{filename}': synthetic/manipulated score "
                 f"{fake_score*100:.1f}%, authentic score {real_score*100:.1f}%.",
             )
-            db.add_event(case_id, investigator, "AI image analysis",
-                          f"fake={fake_score:.4f}; real={real_score:.4f}; faces={len(faces)}")
+            db.add_event(case_id, investigator, "Evidence received & AI-screened",
+                          f"{filename} | SHA-256={sha256} | fake={fake_score:.4f}; real={real_score:.4f}; faces={len(faces)}")
             db.add_batch_item(batch_id, case_id, filename, "ok", evidence_id=evidence_id, kind="image",
                                ai_fake_score=fake_score, faces=len(faces), recurrence=item["recurrence"])
 
     for item in video_items:
         evidence_id = item["evidence_id"]
         filename = item["filename"]
+        sha256 = item["sha256"]
         avg_score = None
         try:
             frames, fps, total = forensics.extract_video_frames(item["video_data"], 10)
@@ -329,9 +329,14 @@ def _run_ai_for_batch(case_id, investigator, batch_id, prepared_items):
                         )
                 db.update_evidence(evidence_id, update_fields)
                 db.add_finding(case_id, finding_text)
-                db.add_event(case_id, investigator, "AI video analysis", f"sampled_frames={len(frame_results)}")
         except Exception:
             pass
+        if avg_score is not None:
+            db.add_event(case_id, investigator, "Evidence received & AI-screened",
+                          f"{filename} | SHA-256={sha256} | avg synthetic={avg_score*100:.1f}% | sampled_frames={len(frame_results)}")
+        else:
+            db.add_event(case_id, investigator, "Evidence received",
+                          f"{filename} | SHA-256={sha256} | AI screening unavailable")
         db.add_batch_item(batch_id, case_id, filename, "ok", evidence_id=evidence_id, kind="video",
                            ai_fake_score=avg_score)
 
@@ -388,7 +393,7 @@ def evidence_detail(evidence_id):
     web_detection = json.loads(item["web_detection_json"]) if item.get("web_detection_json") else None
     scene_labels = json.loads(item["scene_labels_json"]) if item.get("scene_labels_json") else None
     matches = db.find_phash_matches(item["phash"], evidence_id) if item.get("phash") else []
-    priority = forensics.compute_priority(item, matches, web_detection, video_temporal) if item.get("ai_fake_score") is not None or item["kind"] == "image" else None
+    priority = forensics.compute_priority(item, matches, web_detection, video_temporal, scene_labels) if item.get("ai_fake_score") is not None or item["kind"] == "image" else None
     return render_template(
         "evidence_detail.html", item=item, metadata=metadata, reasons=reasons,
         ai_raw=ai_raw, video_frames=video_frames, video_temporal=video_temporal,
@@ -405,7 +410,7 @@ def evidence_log(evidence_id):
         db.add_event(case_id, investigator, "Evidence received",
                       f"{item['filename']} | SHA-256={item['sha256']}")
         db.update_evidence(evidence_id, {"logged": 1})
-        flash("Evidence added to chain of custody.", "success")
+        flash("Evidence added to the activity log.", "success")
     return redirect(url_for("evidence_detail", evidence_id=evidence_id))
 
 
@@ -421,20 +426,13 @@ def media(evidence_id, kind):
     return send_from_directory(path.parent, path.name)
 
 
-@app.route("/ai")
-def ai_analysis():
-    case_id, _ = current_case()
-    evidence_list = db.list_evidence(case_id)
-    return render_template("ai_analysis.html", evidence_list=evidence_list)
-
-
 @app.route("/ai/<int:evidence_id>/run", methods=["POST"])
 def ai_run(evidence_id):
     case_id, investigator = current_case()
     item = db.get_evidence(evidence_id)
     if not item:
         flash("Evidence not found.", "error")
-        return redirect(url_for("ai_analysis"))
+        return redirect(url_for("evidence"))
 
     try:
         if item["kind"] == "image":
@@ -556,7 +554,7 @@ def custody():
         action = request.form.get("action", "").strip()
         details = request.form.get("details", "").strip()
         db.add_event(case_id, investigator, action, details)
-        flash("Custody event added.", "success")
+        flash("Event added.", "success")
         return redirect(url_for("custody"))
 
     events = db.list_events(case_id)
@@ -575,7 +573,7 @@ def custody_export():
     csv_data = "\n".join(lines)
     return send_file(
         io.BytesIO(csv_data.encode()), mimetype="text/csv",
-        as_attachment=True, download_name=f"{case_id}_chain_of_custody.csv",
+        as_attachment=True, download_name=f"{case_id}_activity_log.csv",
     )
 
 
@@ -601,4 +599,4 @@ def report_generate():
 
 
 if __name__ == "__main__":
-    app.run(debug=True, host="127.0.0.1", port=5000)
+    app.run(debug=False, host="0.0.0.0", port=5000)

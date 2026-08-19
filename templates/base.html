@@ -25,15 +25,12 @@
         <span class="nav-ic">⛃</span> Evidence
         <span class="nav-count">{{ nav_counts.evidence }}</span>
       </a>
-      <a href="{{ url_for('ai_analysis') }}" class="{{ 'active' if request.endpoint=='ai_analysis' }}">
-        <span class="nav-ic">◎</span> AI Screening
-      </a>
       <a href="{{ url_for('sources') }}" class="{{ 'active' if request.endpoint=='sources' }}">
         <span class="nav-ic">⛓</span> Source Tracing
         <span class="nav-count">{{ nav_counts.sources }}</span>
       </a>
       <a href="{{ url_for('custody') }}" class="{{ 'active' if request.endpoint=='custody' }}">
-        <span class="nav-ic">⏱</span> Chain of Custody
+        <span class="nav-ic">⏱</span> Activity Log
         <span class="nav-count">{{ nav_counts.events }}</span>
       </a>
       <a href="{{ url_for('report') }}" class="{{ 'active' if request.endpoint=='report' }}">

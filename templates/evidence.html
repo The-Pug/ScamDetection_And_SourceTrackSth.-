@@ -43,7 +43,13 @@
         <div class="name">{{ item.filename }}</div>
         <div class="sub">{{ item.received_at }} · {{ (item.bytes/1024)|round(1) }} KB
           {% if item.logged %}<span class="badge badge-ok">Logged</span>{% else %}<span class="badge badge-neutral">Not logged</span>{% endif %}
-          {% if item.ai_fake_score is not none %}<span class="badge badge-warn">Screened</span>{% endif %}
+          {% if item.ai_fake_score is not none %}
+            <span class="badge {{ 'badge-risk' if item.ai_fake_score > 0.5 else 'badge-ok' }}">
+              {{ '%.0f'|format(item.ai_fake_score*100) }}% synthetic
+            </span>
+          {% else %}
+            <span class="badge badge-neutral">Not AI-screened yet</span>
+          {% endif %}
         </div>
       </div>
     </div>

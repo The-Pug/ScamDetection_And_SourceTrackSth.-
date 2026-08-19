@@ -441,6 +441,11 @@ def label_scene(image_bytes, api_key, model="gemini-flash-latest"):
         "as JSON with exactly these fields: "
         '{"shadow_direction_in_frame": one of '
         '["left","right","toward camera","away from camera","multiple/ambiguous","not visible/unclear"], '
+        '"light_on_subject_upper": apparent light direction on the upper/top part of the main subject '
+        '(e.g. a face or head) — one of '
+        '["left","right","above","below","toward camera","away from camera","multiple/ambiguous","not visible/unclear","no clear subject"], '
+        '"light_on_subject_lower": same categories as above, but for the lower/body part of the main subject, '
+        '"light_on_background": same categories as above, but for the background/environment behind the subject, '
         '"lighting_quality": brief phrase (e.g. "warm/golden", "cool/blue", "flat/overcast", "artificial/mixed"), '
         '"sky_or_background_conditions": brief phrase, '
         '"notable_observations": one sentence on anything else visually relevant, or "" if nothing stands out}'
@@ -471,6 +476,48 @@ def label_scene(image_bytes, api_key, model="gemini-flash-latest"):
         except (requests.RequestException, KeyError, IndexError, ValueError) as error:
             last_error = error
     return {"error": str(last_error)}
+
+
+_LIGHT_DIRECTIONS = {"left", "right", "above", "below", "toward camera", "away from camera"}
+
+
+def light_direction_consistency(scene_labels):
+    """Real light comes from one dominant source. label_scene() above only
+    describes what it sees, region by region — it's never asked whether
+    that's consistent, on purpose. This is the function that decides: it
+    takes the three region readings (upper/lower subject, background) and
+    checks whether they agree. A face lit from the left and a body lit from
+    the right, in the same photo, is a physical contradiction, not a matter
+    of opinion — same logic a VFX artist uses to spot a bad composite.
+
+    Excluded (returns None) unless at least two regions gave a clear,
+    comparable reading — "unclear"/"multiple/ambiguous"/"no clear subject"
+    don't count either way, same treatment every other signal in this app
+    gets when it can't run.
+
+    Brand new and UNVALIDATED as of 2026-08-19 — never tested against a
+    real forged/composite photo, only wired up and reasoned through. Kept
+    at a modest weight in compute_priority() for exactly that reason.
+    """
+    if not scene_labels:
+        return None
+    fields = {
+        "upper (face/head)": scene_labels.get("light_on_subject_upper"),
+        "lower (body)": scene_labels.get("light_on_subject_lower"),
+        "background": scene_labels.get("light_on_background"),
+    }
+    readable = {label: v for label, v in fields.items() if v in _LIGHT_DIRECTIONS}
+    if len(readable) < 2:
+        return None
+
+    values = list(readable.values())
+    pairs = [(a, b) for i, a in enumerate(values) for b in values[i + 1:]]
+    mismatches = sum(1 for a, b in pairs if a != b)
+    return {
+        "points": round(100 * mismatches / len(pairs)),
+        "readings": readable,
+        "consistent": mismatches == 0,
+    }
 
 
 def reverse_image_search(image_bytes, api_key):
@@ -796,7 +843,7 @@ def analyze_temporal_consistency(video_data, burst_seconds=1.5, num_bursts=3):
     }
 
 
-def compute_priority(item, matches, web_detection, video_temporal=None):
+def compute_priority(item, matches, web_detection, video_temporal=None, scene_labels=None):
     """Combines every signal already computed elsewhere on this evidence item
     into one weighted "how much attention does this deserve" score — not a
     fake/real probability, deliberately. Blending a 0-100 pixel-forensics
@@ -818,6 +865,32 @@ def compute_priority(item, matches, web_detection, video_temporal=None):
     a signal; it just says how much each one was trusted to matter.
     """
     components = []
+
+    # Lighting-direction consistency: commented out 2026-08-19, not deleted. Tested live
+    # against the real pug photo + 2 Gemini fakes (3 runs each) and it doesn't separate
+    # real from fake — the SAME real photo flipped between "consistent" and "inconsistent"
+    # across its own two successful runs, more disagreement with itself than there was
+    # between real and fake. That's the underlying vision model's non-determinism, not a
+    # bug in light_direction_consistency() below, which is still intact if this gets
+    # revisited (e.g. with majority-voting across multiple calls per image).
+    #
+    # if item.get("kind") == "image":
+    #     light_check = light_direction_consistency(scene_labels)
+    #     if light_check is not None:
+    #         components.append({
+    #             "label": "Lighting-direction consistency",
+    #             "why": "Real light comes from one dominant source — different parts of the photo implying "
+    #                    "different light directions is a physical contradiction, not a guess. AI only reports "
+    #                    "what it sees per region; this page's own logic decides if it adds up. Brand new and "
+    #                    "unvalidated — never tested against a real forged photo, weighted low for exactly that reason.",
+    #             "points": light_check["points"], "weight": 0.15,
+    #         })
+    #     else:
+    #         components.append({
+    #             "label": "Lighting-direction consistency", "points": None, "weight": 0.0,
+    #             "why": "Excluded — needs at least two of face/body/background to get a clear, comparable "
+    #                    "reading, and this image didn't have enough of them.",
+    #         })
 
     if item.get("kind") == "image":
         components.append({

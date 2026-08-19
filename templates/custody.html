@@ -1,7 +1,7 @@
 {% extends "base.html" %}
-{% block title_suffix %} — Chain of Custody{% endblock %}
+{% block title_suffix %} — Activity Log{% endblock %}
 {% block content %}
-<h1 class="page-title">Chain of Custody</h1>
+<h1 class="page-title">Activity Log</h1>
 <p class="page-sub">A tamper-evident log of everything that's happened to this case's evidence.</p>
 
 <div class="card section">
@@ -54,6 +54,6 @@
     </table>
   </div>
 {% else %}
-  <div class="empty">No custody events recorded yet.</div>
+  <div class="empty">No activity recorded yet.</div>
 {% endif %}
 {% endblock %}

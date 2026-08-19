@@ -4,12 +4,12 @@
 <h1 class="page-title">{{ item.filename }}</h1>
 <p class="page-sub">
   Received {{ item.received_at }}
-  {% if item.logged %}<span class="badge badge-ok">Logged to custody</span>{% else %}<span class="badge badge-neutral">Not yet logged</span>{% endif %}
+  {% if item.logged %}<span class="badge badge-ok">Logged</span>{% else %}<span class="badge badge-neutral">Not yet logged</span>{% endif %}
 </p>
 
 {% if not item.logged %}
 <form method="post" action="{{ url_for('evidence_log', evidence_id=item.id) }}" style="margin-bottom:20px;">
-  <button class="btn" type="submit">Log this to the chain of custody</button>
+  <button class="btn" type="submit">Add to the activity log</button>
 </form>
 {% endif %}
 
@@ -169,6 +169,46 @@
     <p class="hint" style="margin-top:8px;">Described by AI, not judged by it — it was told to say "unclear" rather than guess a precise angle. Compare this against the physics on the Source Tracing page yourself.</p>
   {% endif %}
 </div>
+
+{#
+  3b. Does the lighting agree with itself? — commented out 2026-08-19, not deleted.
+  Tested live against the real pug photo + 2 Gemini fakes (3 runs each) and it doesn't
+  separate real from fake; the same real photo flipped between "consistent" and
+  "inconsistent" across its own two successful runs. Underlying model non-determinism,
+  not a bug here. Kept intact for a possible revisit (e.g. majority-voting across
+  several calls per image).
+
+<div class="card section">
+  <h3><span class="eyebrow">New, unvalidated check</span>Does the light on this subject match its surroundings?</h3>
+  <p class="why">Real light comes from one dominant source — a face lit from the left and a body lit from the
+    right, in the same photo, is a physical contradiction. The AI below only reports what it sees, region by
+    region; it never says whether that adds up. This box does the deciding, in plain code, not a model.</p>
+
+  {% set lc = priority.components | selectattr('label', 'equalto', 'Lighting-direction consistency') | first if priority else None %}
+  {% if scene_labels and scene_labels.get('light_on_subject_upper') %}
+    <div class="table-wrap" style="margin-bottom:10px;">
+      <table>
+        <tr><th>Upper (face/head)</th><th>Lower (body)</th><th>Background</th></tr>
+        <tr>
+          <td>{{ scene_labels.light_on_subject_upper }}</td>
+          <td>{{ scene_labels.light_on_subject_lower }}</td>
+          <td>{{ scene_labels.light_on_background }}</td>
+        </tr>
+      </table>
+    </div>
+    {% if lc and lc.points is not none %}
+      <p style="font-size:13.5px;color:{{ 'var(--amber)' if lc.points > 0 else 'var(--text-dim)' }};">
+        {% if lc.points == 0 %}Consistent — every region with a clear reading agrees on light direction.
+        {% else %}Inconsistent — {{ lc.points }}/100: not every region agrees on where the light is coming from.{% endif %}
+      </p>
+    {% else %}
+      <p class="hint">Not enough clear, comparable readings across regions to judge this one.</p>
+    {% endif %}
+  {% else %}
+    <div class="empty">Not available for this item — either the scene description didn't run, or the model couldn't give a clear per-region reading.</div>
+  {% endif %}
+</div>
+#}
 
 <!-- 4. AI opinion, framed as the weakest signal -->
 <div class="card section">
