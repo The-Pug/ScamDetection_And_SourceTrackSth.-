@@ -2,8 +2,10 @@ import io
 import json
 import os
 import uuid
+from datetime import datetime, timezone
 from pathlib import Path
 
+from dotenv import load_dotenv
 from flask import (
     Flask, render_template, request, redirect, url_for, session,
     send_file, send_from_directory, jsonify, flash,
@@ -13,6 +15,10 @@ from werkzeug.utils import secure_filename
 
 import db
 import forensics
+
+load_dotenv()
+GOOGLE_VISION_API_KEY = os.environ.get("GOOGLE_VISION_API_KEY")
+GEMINI_API_KEY = os.environ.get("GEMINI_API_KEY")
 
 BASE_DIR = Path(__file__).parent
 MEDIA_DIR = BASE_DIR / "instance" / "media"
@@ -140,6 +146,10 @@ def _prepare_evidence_file(case_id, investigator, file, batch_id):
             phash = forensics.calculate_phash(image)
             ela_image, ela_score = forensics.perform_ela(image)
             forensic_score, reasons = forensics.forensic_indicators(image, metadata)
+            landmark = forensics.detect_landmark(data, GOOGLE_VISION_API_KEY)
+            web_detection = forensics.reverse_image_search(data, GOOGLE_VISION_API_KEY)
+            scene_labels = forensics.label_scene(data, GEMINI_API_KEY)
+            gps = forensics.extract_gps_datetime(image)
 
             stored_name = f"orig_{sha256[:12]}.jpg"
             ela_name = f"ela_{sha256[:12]}.jpg"
@@ -159,12 +169,29 @@ def _prepare_evidence_file(case_id, investigator, file, batch_id):
                 "forensic_score": forensic_score,
                 "forensic_reasons": json.dumps(reasons),
                 "metadata_json": json.dumps(metadata),
+                "landmark_json": json.dumps(landmark) if landmark else None,
+                "web_detection_json": json.dumps(web_detection) if web_detection else None,
+                "scene_labels_json": json.dumps(scene_labels) if scene_labels else None,
                 "filepath": str(media_dir / stored_name),
                 "ela_filepath": str(media_dir / ela_name),
                 "received_at": db.current_time(),
                 "logged": 1,
             })
             db.add_event(case_id, investigator, "Evidence received", f"{filename} | SHA-256={sha256}")
+
+            if gps and gps.get("when_utc"):
+                db.add_source(
+                    case_id, url="", source_id=filename, known_hash=sha256,
+                    notes="Auto-extracted from this file's own EXIF GPS data — no manual claim needed.",
+                    claimed_lat=gps["lat"], claimed_lon=gps["lon"],
+                    claimed_datetime=gps["when_utc"].strftime("%Y-%m-%dT%H:%M"),
+                    camera_heading=gps.get("camera_heading"),
+                )
+                db.add_finding(
+                    case_id,
+                    f"'{filename}' carries its own EXIF GPS data ({gps['lat']}, {gps['lon']}) — "
+                    f"sun/shadow physics check auto-recorded in Source Tracing, no manual claim needed.",
+                )
 
             matches = db.find_phash_matches(phash, evidence_id)
             if matches:
@@ -174,6 +201,15 @@ def _prepare_evidence_file(case_id, investigator, file, batch_id):
                     f"Recurrence: '{filename}' perceptually matches {len(matches)} prior "
                     f"record(s) already in the system (closest: '{best['filename']}' in case "
                     f"{best['case_id']}, Hamming distance {best['distance']}).",
+                )
+
+            if web_detection and (web_detection.get("full_matches") or web_detection.get("partial_matches") or web_detection.get("pages")):
+                db.add_finding(
+                    case_id,
+                    f"Reverse image search: '{filename}' already appears elsewhere on the web — "
+                    f"{len(web_detection.get('full_matches', []))} exact match(es), "
+                    f"{len(web_detection.get('pages', []))} page(s) hosting it. Check Evidence Detail "
+                    f"for URLs; a genuinely new, unpublished image would show none of this.",
                 )
 
             return {
@@ -274,15 +310,25 @@ def _run_ai_for_batch(case_id, investigator, batch_id, prepared_items):
                     for (frame_number, _), (fake_score, _, _) in zip(frames, results)
                 ]
                 avg_score = sum(r["synthetic_score"] for r in frame_results) / len(frame_results)
-                db.update_evidence(evidence_id, {
+                update_fields = {
                     "video_frame_results": json.dumps(frame_results),
                     "ai_fake_score": avg_score,
-                })
-                db.add_finding(
-                    case_id,
+                }
+                finding_text = (
                     f"Video screening on '{filename}' sampled {len(frame_results)} frames; "
-                    f"average synthetic score {avg_score*100:.1f}%.",
+                    f"average synthetic score {avg_score*100:.1f}%."
                 )
+                temporal = forensics.analyze_temporal_consistency(item["video_data"])
+                if temporal:
+                    update_fields["video_temporal_json"] = json.dumps(temporal)
+                    if temporal["flagged_count"]:
+                        finding_text += (
+                            f" Frame-to-frame consistency check flagged {temporal['flagged_count']} "
+                            f"discontinuity(ies) out of {temporal['total_transitions']} transitions "
+                            f"(consistency score {temporal['consistency_score']}/100)."
+                        )
+                db.update_evidence(evidence_id, update_fields)
+                db.add_finding(case_id, finding_text)
                 db.add_event(case_id, investigator, "AI video analysis", f"sampled_frames={len(frame_results)}")
         except Exception:
             pass
@@ -337,10 +383,15 @@ def evidence_detail(evidence_id):
     reasons = json.loads(item["forensic_reasons"]) if item.get("forensic_reasons") else []
     ai_raw = json.loads(item["ai_raw_json"]) if item.get("ai_raw_json") else None
     video_frames = json.loads(item["video_frame_results"]) if item.get("video_frame_results") else None
+    video_temporal = json.loads(item["video_temporal_json"]) if item.get("video_temporal_json") else None
+    landmark = json.loads(item["landmark_json"]) if item.get("landmark_json") else None
+    web_detection = json.loads(item["web_detection_json"]) if item.get("web_detection_json") else None
+    scene_labels = json.loads(item["scene_labels_json"]) if item.get("scene_labels_json") else None
     matches = db.find_phash_matches(item["phash"], evidence_id) if item.get("phash") else []
     return render_template(
         "evidence_detail.html", item=item, metadata=metadata, reasons=reasons,
-        ai_raw=ai_raw, video_frames=video_frames, matches=matches,
+        ai_raw=ai_raw, video_frames=video_frames, video_temporal=video_temporal,
+        landmark=landmark, web_detection=web_detection, scene_labels=scene_labels, matches=matches,
     )
 
 
@@ -423,15 +474,25 @@ def ai_run(evidence_id):
                     "synthetic_score": round(fake_score, 4),
                 })
             average_score = (sum(r["synthetic_score"] for r in results) / len(results)) if results else 0
-            db.update_evidence(evidence_id, {
+            update_fields = {
                 "video_frame_results": json.dumps(results),
                 "ai_fake_score": average_score,
-            })
-            db.add_finding(
-                case_id,
+            }
+            finding_text = (
                 f"Video screening on '{item['filename']}' sampled {len(results)} frames; "
-                f"average synthetic score {average_score*100:.1f}%.",
+                f"average synthetic score {average_score*100:.1f}%."
             )
+            temporal = forensics.analyze_temporal_consistency(video_data)
+            if temporal:
+                update_fields["video_temporal_json"] = json.dumps(temporal)
+                if temporal["flagged_count"]:
+                    finding_text += (
+                        f" Frame-to-frame consistency check flagged {temporal['flagged_count']} "
+                        f"discontinuity(ies) out of {temporal['total_transitions']} transitions "
+                        f"(consistency score {temporal['consistency_score']}/100)."
+                    )
+            db.update_evidence(evidence_id, update_fields)
+            db.add_finding(case_id, finding_text)
             db.add_event(case_id, investigator, "AI video analysis", f"sampled_frames={len(results)}")
         flash("AI analysis complete.", "success")
     except Exception as error:
@@ -448,13 +509,29 @@ def sources():
         source_id = request.form.get("source_id", "").strip()
         known_hash = request.form.get("known_hash", "").strip()
         notes = request.form.get("notes", "").strip()
-        db.add_source(case_id, url, source_id, known_hash, notes)
+        claimed_lat = request.form.get("claimed_lat", "").strip() or None
+        claimed_lon = request.form.get("claimed_lon", "").strip() or None
+        claimed_datetime = request.form.get("claimed_datetime", "").strip() or None
+        db.add_source(case_id, url, source_id, known_hash, notes, claimed_lat, claimed_lon, claimed_datetime)
         db.add_event(case_id, investigator, "Source recorded",
                       json.dumps({"url": url, "source_id": source_id, "known_hash": known_hash}))
         flash("Source recorded.", "success")
         return redirect(url_for("sources"))
 
     source_list = db.list_sources(case_id)
+    for source in source_list:
+        source["sun_fact"] = None
+        source["frame_relative"] = None
+        if source.get("claimed_lat") and source.get("claimed_lon") and source.get("claimed_datetime"):
+            try:
+                when_utc = datetime.strptime(source["claimed_datetime"], "%Y-%m-%dT%H:%M").replace(tzinfo=timezone.utc)
+                source["sun_fact"] = forensics.sun_position_at(source["claimed_lat"], source["claimed_lon"], when_utc)
+            except (ValueError, TypeError):
+                pass
+            if source["sun_fact"] and source.get("camera_heading") is not None:
+                source["frame_relative"] = forensics.relative_shadow_direction(
+                    source["sun_fact"]["shadow_bearing"], source["camera_heading"])
+
     url_check = None
     check_url = request.args.get("check_url")
     if check_url:

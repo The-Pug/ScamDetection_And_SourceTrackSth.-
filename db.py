@@ -37,7 +37,11 @@ CREATE TABLE IF NOT EXISTS evidence (
     ai_raw_json TEXT,
     faces_detected INTEGER,
     face_overlay_filepath TEXT,
-    video_frame_results TEXT
+    video_frame_results TEXT,
+    video_temporal_json TEXT,
+    landmark_json TEXT,
+    scene_labels_json TEXT,
+    web_detection_json TEXT
 );
 
 CREATE TABLE IF NOT EXISTS events (
@@ -58,7 +62,11 @@ CREATE TABLE IF NOT EXISTS sources (
     url TEXT,
     source_id TEXT,
     known_hash TEXT,
-    notes TEXT
+    notes TEXT,
+    claimed_lat REAL,
+    claimed_lon REAL,
+    claimed_datetime TEXT,
+    camera_heading REAL
 );
 
 CREATE TABLE IF NOT EXISTS findings (
@@ -97,7 +105,23 @@ def get_db():
 def init_db():
     conn = get_db()
     conn.executescript(SCHEMA)
-    conn.commit()
+    try:
+        conn.execute("ALTER TABLE evidence ADD COLUMN video_temporal_json TEXT")
+        conn.commit()
+    except sqlite3.OperationalError:
+        pass  # column already exists on a DB created before this field was added
+    for column in ("claimed_lat REAL", "claimed_lon REAL", "claimed_datetime TEXT", "camera_heading REAL"):
+        try:
+            conn.execute(f"ALTER TABLE sources ADD COLUMN {column}")
+            conn.commit()
+        except sqlite3.OperationalError:
+            pass
+    for column in ("landmark_json TEXT", "scene_labels_json TEXT", "web_detection_json TEXT"):
+        try:
+            conn.execute(f"ALTER TABLE evidence ADD COLUMN {column}")
+            conn.commit()
+        except sqlite3.OperationalError:
+            pass
     conn.close()
 
 
@@ -170,11 +194,14 @@ def add_finding(case_id, text):
     conn.close()
 
 
-def add_source(case_id, url, source_id, known_hash, notes):
+def add_source(case_id, url, source_id, known_hash, notes, claimed_lat=None, claimed_lon=None,
+                claimed_datetime=None, camera_heading=None):
     conn = get_db()
     conn.execute(
-        "INSERT INTO sources (case_id, time, url, source_id, known_hash, notes) VALUES (?, ?, ?, ?, ?, ?)",
-        (case_id, current_time(), url, source_id, known_hash, notes),
+        "INSERT INTO sources (case_id, time, url, source_id, known_hash, notes, claimed_lat, claimed_lon, "
+        "claimed_datetime, camera_heading) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+        (case_id, current_time(), url, source_id, known_hash, notes, claimed_lat, claimed_lon,
+         claimed_datetime, camera_heading),
     )
     conn.commit()
     conn.close()

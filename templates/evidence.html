@@ -6,12 +6,20 @@
 
 <div class="section">
   <div class="dropzone" id="dropzone">
-    <div style="font-size:28px;margin-bottom:8px;">⛃</div>
-    <div class="dz-label">Drag files or an entire folder here</div>
-    <div class="hint">or</div>
-    <div class="dz-buttons">
-      <button type="button" class="btn btn-ghost" id="pick-files-btn">Select Files</button>
-      <button type="button" class="btn btn-ghost" id="pick-folder-btn">Select Folder</button>
+    <div id="dz-idle">
+      <div style="font-size:28px;margin-bottom:8px;">⛃</div>
+      <div class="dz-label">Drag files or an entire folder here</div>
+      <div class="hint">or</div>
+      <div class="dz-buttons">
+        <button type="button" class="btn btn-ghost" id="pick-files-btn">Select Files</button>
+        <button type="button" class="btn btn-ghost" id="pick-folder-btn">Select Folder</button>
+      </div>
+    </div>
+    <div id="dz-busy" style="display:none;">
+      <div class="spinner"></div>
+      <div class="dz-label" id="dz-busy-label">Analyzing…</div>
+      <div class="hint">Hashing, running the AI classifier, and (for video) the frame-consistency check —
+        this runs on-CPU and can take a while, especially the first file while the model loads.</div>
     </div>
   </div>
   <input type="file" id="files-input" multiple accept=".jpg,.jpeg,.png,.webp,.mp4,.mov,.avi,.mkv" style="display:none">

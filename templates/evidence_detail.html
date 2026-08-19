@@ -82,6 +82,79 @@
     <div class="empty">No matching perceptual hashes found elsewhere in the system yet.</div>
   {% endif %}
 </div>
+
+<div class="card section">
+  <h3>Reverse Image Search <span class="hint">(is this image already on the web?)</span></h3>
+  {% if web_detection and web_detection.get('error') %}
+    <div class="empty">Lookup failed: {{ web_detection.error }}</div>
+  {% elif web_detection %}
+    <p style="font-size:13.5px;color:var(--text-dim);">
+      {{ web_detection.full_matches|length }} exact match(es), {{ web_detection.partial_matches|length }} near-duplicate(s),
+      {{ web_detection.pages|length }} page(s) hosting this image.
+      {% if web_detection.best_guess %}Best guess of what's shown: <strong>{{ web_detection.best_guess }}</strong>.{% endif %}
+    </p>
+    {% if web_detection.pages %}
+      <div class="table-wrap">
+        <table>
+          <tr><th>Page title</th><th>URL</th></tr>
+          {% for p in web_detection.pages %}
+          <tr><td>{{ p.title }}</td><td class="mono">{{ p.url }}</td></tr>
+          {% endfor %}
+        </table>
+      </div>
+    {% endif %}
+    <p class="hint">A genuine match here — especially from before this case started — is direct, checkable
+      evidence the image is recycled or miscaptioned, not an inference. Verify each URL yourself before citing it.</p>
+  {% else %}
+    <div class="empty">No matches found anywhere on the web — or no Vision API key configured.</div>
+  {% endif %}
+</div>
+
+<div class="card section">
+  <h3>Landmark Detection</h3>
+  {% if landmark and landmark is mapping and landmark.get('error') %}
+    <div class="empty">Lookup failed: {{ landmark.error }}</div>
+  {% elif landmark %}
+    <p style="font-size:13.5px;color:var(--text-dim);">Recognized {{ landmark|length }} possible landmark(s) — copy coordinates into
+      Source Tracing's claimed location to run the sun/shadow physics check against them.</p>
+    <div class="table-wrap">
+      <table>
+        <tr><th>Name</th><th>Confidence</th><th>Latitude, Longitude</th></tr>
+        {% for l in landmark %}
+        <tr><td>{{ l.name }}</td><td>{{ l.confidence }}%</td><td class="mono">{{ l.lat }}, {{ l.lon }}</td></tr>
+        {% endfor %}
+      </table>
+    </div>
+  {% else %}
+    <div class="empty">No recognizable landmark found — only works for genuinely famous places.
+      {% if not landmark %}For anywhere else (a random street, a jungle, an interior), just enter
+      coordinates directly in Source Tracing — the sun/shadow check doesn't need a recognized landmark at all.{% endif %}</div>
+  {% endif %}
+</div>
+
+<div class="card section">
+  <h3>Scene Labels <span class="hint">(AI-described, not AI-judged — review before trusting)</span></h3>
+  {% if scene_labels and scene_labels.get('error') %}
+    <div class="empty">Lookup failed: {{ scene_labels.error }}</div>
+  {% elif scene_labels %}
+    <div class="table-wrap">
+      <table>
+        <tr><th>Shadow direction (in frame)</th><th>Lighting quality</th><th>Sky / background</th><th>Notable</th></tr>
+        <tr>
+          <td>{{ scene_labels.shadow_direction_in_frame }}</td>
+          <td>{{ scene_labels.lighting_quality }}</td>
+          <td>{{ scene_labels.sky_or_background_conditions }}</td>
+          <td>{{ scene_labels.notable_observations }}</td>
+        </tr>
+      </table>
+    </div>
+    <p class="hint">Descriptive only — deliberately not given precise angles (the model wasn't asked for them,
+      and wouldn't be reliable at them). If a location/time is claimed in Source Tracing, compare this row
+      against that page's computed sun/shadow physics yourself — this table doesn't do that comparison for you.</p>
+  {% else %}
+    <div class="empty">Not run — no Gemini API key configured.</div>
+  {% endif %}
+</div>
 {% else %}
 <div class="card section media-preview">
   <video controls src="{{ url_for('media', evidence_id=item.id, kind='original') }}"></video>
@@ -130,6 +203,32 @@
             {% for f in video_frames %}<tr><td>{{ f.frame }}</td><td>{{ f.seconds }}</td><td>{{ '%.1f'|format(f.synthetic_score*100) }}%</td></tr>{% endfor %}
           </table>
         </div>
+      {% endif %}
+      {% if video_temporal %}
+        <p style="font-size:13.5px;margin-top:14px;">
+          Frame-to-frame consistency score: <strong>{{ video_temporal.consistency_score }}/100</strong>
+          ({{ video_temporal.flagged_count }} flagged discontinuity(ies) out of {{ video_temporal.total_transitions }} transitions,
+          across {{ video_temporal.bursts|length }} sampled burst(s))
+        </p>
+        {% if video_temporal.flagged_count %}
+          <div class="table-wrap">
+            <table>
+              <tr><th>From frame</th><th>To frame</th><th>Time (s)</th><th>pHash bits changed</th></tr>
+              {% for b in video_temporal.bursts %}
+                {% for f in b.flagged %}
+                  <tr><td>{{ f.from_frame }}</td><td>{{ f.to_frame }}</td><td>{{ f.seconds }}</td><td>{{ f.bits }} / 256</td></tr>
+                {% endfor %}
+              {% endfor %}
+            </table>
+          </div>
+        {% endif %}
+        <p class="hint">Tracks the detected face crop across short bursts of consecutive frames (start/middle/end
+          of the clip) and flags sudden pHash jumps between neighboring frames — the kind of blend-boundary
+          flicker a face-swap leaves that a per-frame classifier average never looks for. Threshold is a
+          first-pass heuristic, not yet validated against known deepfake samples.</p>
+      {% elif item.kind == 'video' %}
+        <p class="hint">No face detected across sampled frames — frame-to-frame consistency check needs a
+          tracked face region and was skipped.</p>
       {% endif %}
     {% endif %}
   {% else %}

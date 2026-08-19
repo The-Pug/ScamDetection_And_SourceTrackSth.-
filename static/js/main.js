@@ -49,8 +49,11 @@ function uploadFiles(fileList) {
   if (!files.length) return;
   const status = document.getElementById("upload-status");
   const zone = document.getElementById("dropzone");
-  if (status) status.textContent = `Uploading and analyzing ${files.length} file(s)... this can take a while for a large folder.`;
-  if (zone) zone.style.pointerEvents = "none";
+  const busyLabel = document.getElementById("dz-busy-label");
+
+  if (busyLabel) busyLabel.textContent = `Analyzing ${files.length} file(s)…`;
+  if (zone) zone.classList.add("busy");
+  if (status) status.textContent = "";
 
   const formData = new FormData();
   files.forEach(f => formData.append("files", f, f.name));
@@ -58,8 +61,8 @@ function uploadFiles(fileList) {
   fetch("/evidence/upload", { method: "POST", body: formData })
     .then(resp => { window.location.href = resp.url; })
     .catch(() => {
+      if (zone) zone.classList.remove("busy");
       if (status) status.textContent = "Upload failed — check that the server is still running.";
-      if (zone) zone.style.pointerEvents = "auto";
     });
 }
 

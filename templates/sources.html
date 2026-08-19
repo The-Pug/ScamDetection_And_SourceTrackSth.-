@@ -10,6 +10,12 @@
   <div class="form-row"><label>Post / Source / Evidence ID</label><input type="text" name="source_id"></div>
   <div class="form-row"><label>Known Source Hash</label><input type="text" name="known_hash"></div>
   <div class="form-row"><label>Acquisition Notes</label><textarea name="notes"></textarea></div>
+  <h3 style="margin-top:18px;">Claimed Location &amp; Time <span class="hint">(optional — checks shadows/light against real sun position)</span></h3>
+  <div class="grid grid-2">
+    <div class="form-row"><label>Claimed Latitude, Longitude</label><input type="text" name="claimed_lat" placeholder="30.742" style="margin-bottom:6px;"><input type="text" name="claimed_lon" placeholder="76.822"></div>
+    <div class="form-row"><label>Claimed Date &amp; Time (UTC)</label><input type="datetime-local" name="claimed_datetime"></div>
+  </div>
+  <p class="hint">Enter the claimed capture time in UTC, not local time — convert first if you know the local timezone.</p>
   <button class="btn" type="submit">Record Provenance</button>
 </form>
 
@@ -17,7 +23,7 @@
 {% if source_list %}
   <div class="table-wrap section">
     <table>
-      <tr><th>Time</th><th>URL</th><th>Source ID</th><th>Known Hash</th><th>Notes</th></tr>
+      <tr><th>Time</th><th>URL</th><th>Source ID</th><th>Known Hash</th><th>Notes</th><th>Sun / Shadow Check</th></tr>
       {% for s in source_list %}
       <tr>
         <td>{{ s.time }}</td>
@@ -25,6 +31,19 @@
         <td>{{ s.source_id }}</td>
         <td class="mono">{{ s.known_hash }}</td>
         <td>{{ s.notes }}</td>
+        <td style="max-width:260px;">
+          {% if s.sun_fact %}
+            {{ s.sun_fact.description }}
+            {% if s.frame_relative %}
+              <br><strong>In this photo's frame:</strong> shadows should fall {{ s.frame_relative }}
+              (camera was facing {{ s.camera_heading|round(0) }}°, from EXIF).
+            {% endif %}
+          {% elif s.claimed_lat %}
+            <span class="hint">Could not compute — check the latitude/longitude/date entered.</span>
+          {% else %}
+            <span class="hint">No location/time claimed.</span>
+          {% endif %}
+        </td>
       </tr>
       {% endfor %}
     </table>
