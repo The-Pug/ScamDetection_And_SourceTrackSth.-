@@ -1,8 +1,8 @@
 {% extends "base.html" %}
 {% block title_suffix %} — Evidence{% endblock %}
 {% block content %}
-<h1 class="page-title">Evidence Intake</h1>
-<p class="page-sub">Upload authorized image/video evidence — one file, several files, or a whole folder. Every item is hashed, screened by the AI model, and checked for recurrence automatically.</p>
+<h1 class="page-title">Evidence</h1>
+<p class="page-sub">Upload a photo or video — one file, several, or a whole folder. Everything below happens automatically: fingerprinting, edit checks, recycling checks, and AI screening.</p>
 
 <div class="section">
   <div class="dropzone" id="dropzone">
@@ -41,10 +41,9 @@
       {% endif %}
       <div class="meta">
         <div class="name">{{ item.filename }}</div>
-        <div class="sub mono">{{ item.sha256[:24] }}…</div>
         <div class="sub">{{ item.received_at }} · {{ (item.bytes/1024)|round(1) }} KB
           {% if item.logged %}<span class="badge badge-ok">Logged</span>{% else %}<span class="badge badge-neutral">Not logged</span>{% endif %}
-          {% if item.ai_fake_score is not none %}<span class="badge badge-warn">AI screened</span>{% endif %}
+          {% if item.ai_fake_score is not none %}<span class="badge badge-warn">Screened</span>{% endif %}
         </div>
       </div>
     </div>

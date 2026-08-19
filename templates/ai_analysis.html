@@ -1,8 +1,8 @@
 {% extends "base.html" %}
 {% block title_suffix %} — AI Analysis{% endblock %}
 {% block content %}
-<h1 class="page-title">AI Media Analysis</h1>
-<p class="page-sub">Pretrained deepfake classifier ({{ 'prithivMLmods/deepfake-detector-model-v1' }}) + face detection. Select an evidence item to run or review AI screening.</p>
+<h1 class="page-title">AI Screening</h1>
+<p class="page-sub">One trained model's opinion on each item — the weakest signal in this app, and treated that way everywhere. Pick an item to run or review it.</p>
 
 {% if evidence_list %}
   {% for item in evidence_list %}
@@ -18,7 +18,7 @@
         {% if item.ai_fake_score is not none %}
           <div class="sub">
             <span class="badge {{ 'badge-risk' if item.ai_fake_score > 0.5 else 'badge-ok' }}">
-              synthetic {{ '%.1f'|format(item.ai_fake_score*100) }}%
+              {{ '%.0f'|format(item.ai_fake_score*100) }}% synthetic
             </span>
           </div>
         {% else %}

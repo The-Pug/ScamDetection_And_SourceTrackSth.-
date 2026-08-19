@@ -5,13 +5,17 @@
   --border:#2a323d;
   --text:#e6edf3;
   --text-dim:#9aa7b4;
+  --text-faint:#6b7684;
   --accent:#3fb9a8;
   --accent-soft:rgba(63,185,168,.12);
   --amber:#e3b341;
+  --amber-soft:rgba(227,179,65,.12);
   --red:#f2555a;
   --red-soft:rgba(242,85,90,.12);
   --green:#3fb950;
+  --green-soft:rgba(63,185,80,.12);
   --radius:10px;
+  --radius-lg:14px;
   font-size:15px;
 }
 
@@ -96,10 +100,54 @@ a{color:var(--accent);text-decoration:none;}
 .card{
   background:var(--panel);
   border:1px solid var(--border);
-  border-radius:var(--radius);
-  padding:18px 20px;
+  border-radius:var(--radius-lg);
+  padding:20px 22px;
 }
-.card h3{margin:0 0 12px;font-size:14px;color:var(--text-dim);font-weight:600;text-transform:uppercase;letter-spacing:.4px;}
+.card h3{margin:0 0 4px;font-size:16px;color:var(--text);font-weight:650;letter-spacing:0;}
+.card h3 .eyebrow{
+  display:block;font-size:11px;font-weight:600;color:var(--text-faint);
+  text-transform:uppercase;letter-spacing:.5px;margin-bottom:4px;
+}
+
+/* "Why" — the one-line plain-language reason a signal exists, right under its heading/number */
+.why{
+  font-size:13px;color:var(--text-dim);line-height:1.5;
+  margin:2px 0 14px;padding-left:11px;border-left:2px solid var(--border);
+}
+.why b{color:var(--text);font-weight:600;}
+
+/* Verdict pills — glanceable status, same shape everywhere */
+.pill{
+  display:inline-flex;align-items:center;gap:5px;
+  padding:5px 12px;border-radius:20px;font-size:12.5px;font-weight:600;
+  border:1px solid transparent;
+}
+.pill::before{content:"";width:7px;height:7px;border-radius:50%;background:currentColor;flex:0 0 auto;}
+.pill-clean{background:var(--green-soft);color:var(--green);}
+.pill-flag{background:var(--amber-soft);color:var(--amber);}
+.pill-risk{background:var(--red-soft);color:var(--red);}
+.pill-found{background:var(--accent-soft);color:var(--accent);}
+.pill-neutral{background:var(--panel-2);color:var(--text-dim);border-color:var(--border);}
+
+/* Scan-in-five-seconds summary row at the top of a report */
+.summary-strip{display:flex;flex-wrap:wrap;gap:10px;margin-bottom:24px;}
+.summary-strip .pill{padding:8px 14px;font-size:13px;}
+
+/* Collapsible technical detail — native <details>, no JS */
+details.tech{
+  background:var(--panel);border:1px solid var(--border);border-radius:var(--radius-lg);
+  padding:4px 22px;margin-bottom:16px;
+}
+details.tech[open]{padding-bottom:18px;}
+details.tech summary{
+  cursor:pointer;padding:16px 0;font-weight:600;font-size:14.5px;
+  color:var(--text-dim);list-style:none;display:flex;align-items:center;gap:8px;
+  user-select:none;
+}
+details.tech summary::-webkit-details-marker{display:none;}
+details.tech summary::before{content:"▸";font-size:11px;color:var(--text-faint);transition:transform .15s;}
+details.tech[open] summary::before{transform:rotate(90deg);}
+details.tech summary:hover{color:var(--text);}
 
 .stat{
   background:var(--panel);border:1px solid var(--border);border-radius:var(--radius);

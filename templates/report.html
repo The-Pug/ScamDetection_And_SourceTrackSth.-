@@ -1,16 +1,14 @@
 {% extends "base.html" %}
 {% block title_suffix %} — Report{% endblock %}
 {% block content %}
-<h1 class="page-title">Forensic Investigation Report</h1>
-<p class="page-sub">Generates a PDF summary of evidence, findings, source tracing, and the full chain-of-custody log for this case.</p>
+<h1 class="page-title">Report</h1>
+<p class="page-sub">One PDF with everything — evidence, findings, source-tracing claims, and the full custody log for this case.</p>
 
 <div class="card section">
-  <h3>Generate Report</h3>
-  <p style="font-size:13.5px;color:var(--text-dim);">Case {{ case_id }} · Investigator {{ investigator }}</p>
-  <a class="btn" href="{{ url_for('report_generate') }}">Generate &amp; Download PDF Report</a>
+  <h3>Case {{ case_id }}</h3>
+  <p style="font-size:13.5px;color:var(--text-dim);margin-bottom:16px;">Investigator: {{ investigator }}</p>
+  <a class="btn" href="{{ url_for('report_generate') }}">Download PDF</a>
 </div>
 
-<div class="flash flash-error" style="background:rgba(227,179,65,.1);border-color:rgba(227,179,65,.3);color:var(--amber);">
-  Final forensic conclusions require validated methods and qualified human examination.
-</div>
+<p class="hint">This is a summary of what was found, not a verdict — final conclusions still need a qualified human examiner.</p>
 {% endblock %}

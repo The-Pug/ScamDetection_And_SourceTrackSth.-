@@ -1,47 +1,32 @@
 {% extends "base.html" %}
 {% block title_suffix %} — Source Tracing{% endblock %}
 {% block content %}
-<h1 class="page-title">Source Tracing &amp; Provenance</h1>
-<p class="page-sub">Record where this media originated and cross-check perceptual hashes for near-duplicate matches.</p>
+<h1 class="page-title">Source Tracing</h1>
+<p class="page-sub">Check whether a claimed place and time for a photo actually holds up — real sun-position physics, not a guess.</p>
 
-<form method="post" class="card section">
-  <h3>Record Provenance</h3>
-  <div class="form-row"><label>Original Source URL</label><input type="text" name="url" placeholder="https://..."></div>
-  <div class="form-row"><label>Post / Source / Evidence ID</label><input type="text" name="source_id"></div>
-  <div class="form-row"><label>Known Source Hash</label><input type="text" name="known_hash"></div>
-  <div class="form-row"><label>Acquisition Notes</label><textarea name="notes"></textarea></div>
-  <h3 style="margin-top:18px;">Claimed Location &amp; Time <span class="hint">(optional — checks shadows/light against real sun position)</span></h3>
-  <div class="grid grid-2">
-    <div class="form-row"><label>Claimed Latitude, Longitude</label><input type="text" name="claimed_lat" placeholder="30.742" style="margin-bottom:6px;"><input type="text" name="claimed_lon" placeholder="76.822"></div>
-    <div class="form-row"><label>Claimed Date &amp; Time (UTC)</label><input type="datetime-local" name="claimed_datetime"></div>
-  </div>
-  <p class="hint">Enter the claimed capture time in UTC, not local time — convert first if you know the local timezone.</p>
-  <button class="btn" type="submit">Record Provenance</button>
-</form>
-
-<div class="section-title">Recorded Sources</div>
+<div class="section-title">Recorded claims</div>
 {% if source_list %}
   <div class="table-wrap section">
     <table>
-      <tr><th>Time</th><th>URL</th><th>Source ID</th><th>Known Hash</th><th>Notes</th><th>Sun / Shadow Check</th></tr>
+      <tr><th>Recorded</th><th>Source / notes</th><th>Does the physics check out?</th></tr>
       {% for s in source_list %}
       <tr>
-        <td>{{ s.time }}</td>
-        <td class="mono">{{ s.url }}</td>
-        <td>{{ s.source_id }}</td>
-        <td class="mono">{{ s.known_hash }}</td>
-        <td>{{ s.notes }}</td>
-        <td style="max-width:260px;">
+        <td style="white-space:nowrap;">{{ s.time }}</td>
+        <td>
+          {% if s.url %}<div class="mono" style="margin-bottom:4px;">{{ s.url }}</div>{% endif %}
+          {% if s.source_id %}<div>{{ s.source_id }}</div>{% endif %}
+          {{ s.notes }}
+        </td>
+        <td style="max-width:320px;">
           {% if s.sun_fact %}
             {{ s.sun_fact.description }}
             {% if s.frame_relative %}
-              <br><strong>In this photo's frame:</strong> shadows should fall {{ s.frame_relative }}
-              (camera was facing {{ s.camera_heading|round(0) }}°, from EXIF).
+              <br><b>In frame:</b> shadows should fall {{ s.frame_relative }} (camera faced {{ s.camera_heading|round(0) }}°, from EXIF).
             {% endif %}
           {% elif s.claimed_lat %}
-            <span class="hint">Could not compute — check the latitude/longitude/date entered.</span>
+            <span class="hint">Couldn't compute — check the coordinates/date entered.</span>
           {% else %}
-            <span class="hint">No location/time claimed.</span>
+            <span class="hint">No place/time claimed for this one.</span>
           {% endif %}
         </td>
       </tr>
@@ -49,16 +34,39 @@
     </table>
   </div>
 {% else %}
-  <div class="empty section">No sources recorded yet.</div>
+  <div class="empty section">No claims recorded yet. Add one below, or upload a photo whose own EXIF data already has GPS — that gets checked automatically.</div>
 {% endif %}
 
-<div class="card section">
-  <h3>Perceptual Similarity Calculator</h3>
+<form method="post" class="card section">
+  <h3>Add a claim to check</h3>
+  <p class="why">Give a claimed place and time, and this computes exactly where the sun really was — so you can
+    compare it against what the shadows and lighting actually look like in the photo. This runs entirely offline,
+    no AI involved, just real astronomy.</p>
   <div class="grid grid-2">
-    <div class="form-row"><label>Perceptual Hash A</label><input type="text" id="hash-a" class="mono" placeholder="hex hash"></div>
-    <div class="form-row"><label>Perceptual Hash B</label><input type="text" id="hash-b" class="mono" placeholder="hex hash"></div>
+    <div class="form-row"><label>Claimed latitude, longitude</label><input type="text" name="claimed_lat" placeholder="30.742" style="margin-bottom:6px;"><input type="text" name="claimed_lon" placeholder="76.822"></div>
+    <div class="form-row"><label>Claimed date &amp; time (UTC)</label><input type="datetime-local" name="claimed_datetime"></div>
+  </div>
+  <p class="hint">Use UTC, not local time — convert first if you know the timezone. Coordinates from a Landmark Detection result on an Evidence page can be pasted straight in here.</p>
+  <div class="form-row"><label>Notes (optional)</label><textarea name="notes" placeholder="e.g. where this claim came from"></textarea></div>
+  <button class="btn" type="submit">Check it</button>
+  <details style="margin-top:14px;">
+    <summary style="cursor:pointer;font-size:12.5px;color:var(--text-faint);">More fields (source URL, ID, known hash)</summary>
+    <div style="margin-top:12px;">
+      <div class="form-row"><label>Source URL</label><input type="text" name="url" placeholder="https://..."></div>
+      <div class="form-row"><label>Post / source ID</label><input type="text" name="source_id"></div>
+      <div class="form-row"><label>Known hash</label><input type="text" name="known_hash"></div>
+    </div>
+  </details>
+</form>
+
+<details class="tech section">
+  <summary>Advanced: compare two hashes by hand</summary>
+  <p class="why">If you've got two perceptual hashes from somewhere else and want to know if they're the same photo, paste them here.</p>
+  <div class="grid grid-2">
+    <div class="form-row"><label>Hash A</label><input type="text" id="hash-a" class="mono" placeholder="hex hash"></div>
+    <div class="form-row"><label>Hash B</label><input type="text" id="hash-b" class="mono" placeholder="hex hash"></div>
   </div>
   <div id="hamming-result"></div>
-  <p class="hint">Lower Hamming distance indicates greater similarity. Distances up to ~12 (of 256 bits) typically indicate the same underlying image.</p>
-</div>
+  <p class="hint">Under ~12 bits apart (out of 256) usually means the same underlying image.</p>
+</details>
 {% endblock %}

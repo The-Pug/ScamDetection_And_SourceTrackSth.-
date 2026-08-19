@@ -1,26 +1,26 @@
 {% extends "base.html" %}
 {% block title_suffix %} — Batch Results{% endblock %}
 {% block content %}
-<h1 class="page-title">Batch Ingest Results</h1>
-<p class="page-sub">Batch {{ batch_id }} — every image was hashed, screened, and checked for recurrence automatically.</p>
+<h1 class="page-title">Batch Results</h1>
+<p class="page-sub">Every file was fingerprinted, screened, and checked for recycling automatically.</p>
 
 <div class="grid grid-4 section">
   <div class="stat"><div class="stat-value">{{ ok_items|length }}</div><div class="stat-label">Processed</div></div>
   <div class="stat"><div class="stat-value">{{ skipped_items|length }}</div><div class="stat-label">Skipped</div></div>
   <div class="stat"><div class="stat-value">{{ error_items|length }}</div><div class="stat-label">Failed</div></div>
-  <div class="stat"><div class="stat-value">{{ recurrence_flagged }}</div><div class="stat-label">Recurrence Flags</div></div>
+  <div class="stat"><div class="stat-value">{{ recurrence_flagged }}</div><div class="stat-label">Already Seen Before</div></div>
 </div>
 
 <div class="table-wrap section">
   <table>
-    <tr><th>File</th><th>Type</th><th>AI Score</th><th>Faces</th><th>Recurrence</th><th></th></tr>
+    <tr><th>File</th><th>Type</th><th>AI Opinion</th><th>Faces</th><th>Seen before</th><th></th></tr>
     {% for r in ok_items %}
     <tr>
       <td>{{ r.filename }}</td>
       <td>{{ r.kind }}</td>
       <td>
         {% if r.ai_fake_score is not none %}
-          <span class="badge {{ 'badge-risk' if r.ai_fake_score > 0.5 else 'badge-ok' }}">{{ '%.1f'|format(r.ai_fake_score*100) }}% synthetic</span>
+          <span class="badge {{ 'badge-risk' if r.ai_fake_score > 0.5 else 'badge-ok' }}">{{ '%.0f'|format(r.ai_fake_score*100) }}% synthetic</span>
         {% else %}
           <span class="badge badge-neutral">n/a</span>
         {% endif %}

@@ -7,139 +7,130 @@
   {% if item.logged %}<span class="badge badge-ok">Logged to custody</span>{% else %}<span class="badge badge-neutral">Not yet logged</span>{% endif %}
 </p>
 
-<div class="card section">
-  <h3>Fingerprint</h3>
-  <div class="mono">{{ item.sha256 }}</div>
-  {% if not item.logged %}
-  <form method="post" action="{{ url_for('evidence_log', evidence_id=item.id) }}" style="margin-top:12px;">
-    <button class="btn" type="submit">Record Evidence Intake to Chain of Custody</button>
-  </form>
-  {% endif %}
-</div>
+{% if not item.logged %}
+<form method="post" action="{{ url_for('evidence_log', evidence_id=item.id) }}" style="margin-bottom:20px;">
+  <button class="btn" type="submit">Log this to the chain of custody</button>
+</form>
+{% endif %}
 
 {% if item.kind == 'image' %}
+<!-- Scan-in-five-seconds summary -->
+<div class="summary-strip">
+  <span class="pill {{ 'pill-flag' if item.forensic_score > 20 else 'pill-clean' }}">
+    Editing signs: {{ 'some found' if item.forensic_score > 20 else 'none found' }}
+  </span>
+  {% if item.ai_fake_score is not none %}
+    <span class="pill pill-neutral">AI opinion: {{ '%.0f'|format(item.ai_fake_score*100) }}% synthetic (weak signal)</span>
+  {% endif %}
+  <span class="pill {{ 'pill-flag' if matches else 'pill-clean' }}">
+    {{ 'Matches something already in this case' if matches else 'New to this case' }}
+  </span>
+  <span class="pill {{ 'pill-found' if (web_detection and not web_detection.get('error')) else 'pill-neutral' }}">
+    {{ 'Found elsewhere on the web' if (web_detection and not web_detection.get('error')) else 'Not found on the web' }}
+  </span>
+</div>
+
 <div class="grid grid-2 section">
   <div class="card media-preview">
     <img src="{{ url_for('media', evidence_id=item.id, kind='original') }}" alt="">
-    <div class="media-caption">Original Evidence — {{ item.width }} × {{ item.height }}</div>
+    <div class="media-caption">Original — {{ item.width }} × {{ item.height }}</div>
   </div>
   <div class="card media-preview">
     <img src="{{ url_for('media', evidence_id=item.id, kind='ela') }}" alt="">
-    <div class="media-caption">ELA Review Aid — score {{ '%.2f'|format(item.ela_score) }}</div>
+    <div class="media-caption">Edit-check view — brighter patches can mean a re-saved or edited spot</div>
   </div>
 </div>
 
-<div class="grid grid-3 section">
-  <div class="stat"><div class="stat-value">{{ item.width }}×{{ item.height }}</div><div class="stat-label">Resolution</div></div>
-  <div class="stat"><div class="stat-value" style="font-size:15px;" class="mono">{{ item.phash[:16] }}…</div><div class="stat-label">Perceptual Hash</div></div>
-  <div class="stat"><div class="stat-value">{{ '%.2f'|format(item.ela_score) }}</div><div class="stat-label">ELA Score</div></div>
-</div>
-
-<div class="grid grid-2 section">
-  <div class="card">
-    <h3>EXIF / Metadata</h3>
-    {% if metadata %}
-      <table>
-        {% for k, v in metadata.items() %}
-        <tr><td>{{ k }}</td><td>{{ v }}</td></tr>
-        {% endfor %}
-      </table>
-    {% else %}
-      <div class="empty">No EXIF metadata found.</div>
-    {% endif %}
-  </div>
-  <div class="card">
-    <h3>Forensic Indicators — score {{ item.forensic_score }}</h3>
-    <div class="score-bar"><div style="width:{{ item.forensic_score }}%;background:{{ 'var(--red)' if item.forensic_score > 50 else ('var(--amber)' if item.forensic_score > 20 else 'var(--green)') }};"></div></div>
-    <ul style="margin:14px 0 0;padding-left:18px;font-size:13.5px;">
-      {% for r in reasons %}
-        <li style="color:{{ 'var(--amber)' if r.risk else 'var(--text-dim)' }};">
-          {{ r.text }}{% if not r.risk %} <span class="badge badge-neutral" style="font-size:10px;">context, not scored</span>{% endif %}
-        </li>
-      {% endfor %}
-    </ul>
-  </div>
-</div>
-
+<!-- 1. Has this been edited? -->
 <div class="card section">
-  <h3>Recurrence — Source Tracing</h3>
+  <h3><span class="eyebrow">Pixel-level check</span>Has this photo been edited?</h3>
+  <p class="why">Real edits — pasting something in, smoothing over a face, removing an object — leave tiny
+    statistical traces even when they're invisible to the eye. This looks for those traces directly, no AI guessing involved.</p>
+  <ul style="margin:0;padding-left:18px;font-size:13.5px;">
+    {% for r in reasons %}
+      <li style="color:{{ 'var(--amber)' if r.risk else 'var(--text-dim)' }};margin-bottom:6px;">
+        {{ r.text }}{% if not r.risk %} <span class="badge badge-neutral" style="font-size:10px;">not counted against it</span>{% endif %}
+      </li>
+    {% endfor %}
+  </ul>
+</div>
+
+<!-- 2. Has this been seen before? -->
+<div class="card section">
+  <h3><span class="eyebrow">Recycling check</span>Has this image shown up before?</h3>
+  <p class="why">A common trick has nothing to do with AI at all — it's a real photo, reused with a fake
+    caption. If the exact image already exists somewhere else, that's a fact you can point to, not a guess.</p>
+
+  <p style="font-size:13.5px;color:var(--text-dim);margin:0 0 8px;"><b style="color:var(--text);">In this case's own records:</b>
+    {% if matches %}matches {{ matches|length }} other item(s) already logged.{% else %}nothing matches yet.{% endif %}</p>
   {% if matches %}
-    <p style="font-size:13.5px;color:var(--text-dim);">This image's perceptual hash matches {{ matches|length }} other record(s) already in the system:</p>
-    <div class="table-wrap">
+    <div class="table-wrap" style="margin-bottom:16px;">
       <table>
-        <tr><th>Filename</th><th>Case</th><th>Distance</th><th>Seen</th></tr>
+        <tr><th>File</th><th>Case</th><th>How close a match</th><th>Seen</th></tr>
         {% for m in matches %}
         <tr>
           <td>{{ m.filename }}</td>
           <td>{{ m.case_id }}</td>
-          <td><span class="badge {{ 'badge-warn' if m.distance <= 6 else 'badge-neutral' }}">{{ m.distance }}</span></td>
+          <td><span class="badge {{ 'badge-warn' if m.distance <= 6 else 'badge-neutral' }}">{{ m.distance <= 6 and 'near-identical' or 'somewhat similar' }}</span></td>
           <td>{{ m.received_at }}</td>
         </tr>
         {% endfor %}
       </table>
     </div>
-  {% else %}
-    <div class="empty">No matching perceptual hashes found elsewhere in the system yet.</div>
   {% endif %}
-</div>
 
-<div class="card section">
-  <h3>Reverse Image Search <span class="hint">(is this image already on the web?)</span></h3>
-  {% if web_detection and web_detection.get('error') %}
-    <div class="empty">Lookup failed: {{ web_detection.error }}</div>
-  {% elif web_detection %}
-    <p style="font-size:13.5px;color:var(--text-dim);">
-      {{ web_detection.full_matches|length }} exact match(es), {{ web_detection.partial_matches|length }} near-duplicate(s),
-      {{ web_detection.pages|length }} page(s) hosting this image.
-      {% if web_detection.best_guess %}Best guess of what's shown: <strong>{{ web_detection.best_guess }}</strong>.{% endif %}
-    </p>
-    {% if web_detection.pages %}
-      <div class="table-wrap">
-        <table>
-          <tr><th>Page title</th><th>URL</th></tr>
-          {% for p in web_detection.pages %}
-          <tr><td>{{ p.title }}</td><td class="mono">{{ p.url }}</td></tr>
-          {% endfor %}
-        </table>
-      </div>
+  <p style="font-size:13.5px;color:var(--text-dim);margin:0 0 8px;"><b style="color:var(--text);">Out on the open web:</b>
+    {% if web_detection and web_detection.get('error') %}
+      lookup failed ({{ web_detection.error }}).
+    {% elif web_detection %}
+      found on {{ web_detection.pages|length }} page(s), {{ web_detection.full_matches|length }} exact copy/copies.
+      {% if web_detection.best_guess %}Looks like: <b style="color:var(--text);">{{ web_detection.best_guess }}</b>.{% endif %}
+    {% else %}
+      nothing found — or no Vision API key is configured for this to run.
     {% endif %}
-    <p class="hint">A genuine match here — especially from before this case started — is direct, checkable
-      evidence the image is recycled or miscaptioned, not an inference. Verify each URL yourself before citing it.</p>
-  {% else %}
-    <div class="empty">No matches found anywhere on the web — or no Vision API key configured.</div>
+  </p>
+  {% if web_detection and web_detection.pages %}
+    <div class="table-wrap">
+      <table>
+        <tr><th>Page</th><th>Link</th></tr>
+        {% for p in web_detection.pages %}
+        <tr><td>{{ p.title }}</td><td class="mono">{{ p.url }}</td></tr>
+        {% endfor %}
+      </table>
+    </div>
+    <p class="hint" style="margin-top:10px;">Worth a real look before you cite it — click through and confirm it's genuinely the same photo, in a different context.</p>
   {% endif %}
 </div>
 
+<!-- 3. Where/when was this really taken? -->
 <div class="card section">
-  <h3>Landmark Detection</h3>
+  <h3><span class="eyebrow">Place &amp; time check</span>Where — and when — was this actually taken?</h3>
+  <p class="why">If someone claims a place and time for this photo, real sun-position physics can confirm or
+    contradict it — go to <a href="{{ url_for('sources') }}">Source Tracing</a> to check a claim. This section
+    just tries to recognize the place on its own first.</p>
+
   {% if landmark and landmark is mapping and landmark.get('error') %}
     <div class="empty">Lookup failed: {{ landmark.error }}</div>
   {% elif landmark %}
-    <p style="font-size:13.5px;color:var(--text-dim);">Recognized {{ landmark|length }} possible landmark(s) — copy coordinates into
-      Source Tracing's claimed location to run the sun/shadow physics check against them.</p>
-    <div class="table-wrap">
+    <div class="table-wrap" style="margin-bottom:14px;">
       <table>
-        <tr><th>Name</th><th>Confidence</th><th>Latitude, Longitude</th></tr>
+        <tr><th>Place</th><th>Confidence</th><th>Coordinates</th></tr>
         {% for l in landmark %}
         <tr><td>{{ l.name }}</td><td>{{ l.confidence }}%</td><td class="mono">{{ l.lat }}, {{ l.lon }}</td></tr>
         {% endfor %}
       </table>
     </div>
+    <p class="hint">Copy these coordinates into Source Tracing's claimed location to check the lighting against real physics.</p>
   {% else %}
-    <div class="empty">No recognizable landmark found — only works for genuinely famous places.
-      {% if not landmark %}For anywhere else (a random street, a jungle, an interior), just enter
-      coordinates directly in Source Tracing — the sun/shadow check doesn't need a recognized landmark at all.{% endif %}</div>
+    <div class="empty">No recognizable landmark — this only works for genuinely famous places. Anywhere else, just enter coordinates by hand in Source Tracing.</div>
   {% endif %}
-</div>
 
-<div class="card section">
-  <h3>Scene Labels <span class="hint">(AI-described, not AI-judged — review before trusting)</span></h3>
   {% if scene_labels and scene_labels.get('error') %}
-    <div class="empty">Lookup failed: {{ scene_labels.error }}</div>
+    <p class="hint" style="margin-top:14px;">Scene description failed: {{ scene_labels.error }}</p>
   {% elif scene_labels %}
-    <div class="table-wrap">
+    <div class="table-wrap" style="margin-top:14px;">
       <table>
-        <tr><th>Shadow direction (in frame)</th><th>Lighting quality</th><th>Sky / background</th><th>Notable</th></tr>
+        <tr><th>Shadows point</th><th>Light looks</th><th>Sky / background</th><th>Anything else notable</th></tr>
         <tr>
           <td>{{ scene_labels.shadow_direction_in_frame }}</td>
           <td>{{ scene_labels.lighting_quality }}</td>
@@ -148,95 +139,128 @@
         </tr>
       </table>
     </div>
-    <p class="hint">Descriptive only — deliberately not given precise angles (the model wasn't asked for them,
-      and wouldn't be reliable at them). If a location/time is claimed in Source Tracing, compare this row
-      against that page's computed sun/shadow physics yourself — this table doesn't do that comparison for you.</p>
-  {% else %}
-    <div class="empty">Not run — no Gemini API key configured.</div>
+    <p class="hint" style="margin-top:8px;">Described by AI, not judged by it — it was told to say "unclear" rather than guess a precise angle. Compare this against the physics on the Source Tracing page yourself.</p>
   {% endif %}
 </div>
+
+<!-- 4. AI opinion, framed as the weakest signal -->
+<div class="card section">
+  <h3><span class="eyebrow">Weakest signal — read with caution</span>What does the AI classifier think?</h3>
+  {% if item.ai_fake_score is not none %}
+    <p class="why">A single trained model's opinion. It's often wrong outside photos of human faces, and it can't
+      explain its own reasoning the way the checks above can — that's why it's listed last, not first.</p>
+    {% if item.faces_detected == 0 %}
+      <div class="flash flash-error" style="margin-bottom:14px;background:rgba(227,179,65,.1);border-color:rgba(227,179,65,.3);color:var(--amber);">
+        No faces detected — this model is only trained on human faces. Screenshots, documents, animals, and objects
+        are outside what it understands; treat this score as noise, not a finding.
+      </div>
+    {% endif %}
+    <div class="grid grid-2">
+      <div class="stat"><div class="stat-value">{{ '%.0f'|format(item.ai_fake_score*100) }}%</div><div class="stat-label">Looks synthetic</div></div>
+      <div class="stat"><div class="stat-value">{{ '%.0f'|format(item.ai_real_score*100) }}%</div><div class="stat-label">Looks real</div></div>
+    </div>
+    <p style="margin-top:14px;font-size:13.5px;">Faces it could find: <strong>{{ item.faces_detected }}</strong></p>
+    {% if item.face_overlay_filepath %}
+      <div class="media-preview" style="max-width:480px;">
+        <img src="{{ url_for('media', evidence_id=item.id, kind='overlay') }}" alt="">
+        <div class="media-caption">Where it looked</div>
+      </div>
+    {% endif %}
+  {% else %}
+    <p style="font-size:13.5px;color:var(--text-dim);margin-bottom:12px;">Not run yet.</p>
+    <form method="post" action="{{ url_for('ai_run', evidence_id=item.id) }}">
+      <button class="btn" type="submit">Run the AI classifier</button>
+    </form>
+  {% endif %}
+</div>
+
+<!-- Technical details, tucked away but not hidden -->
+<details class="tech section">
+  <summary>Technical details (hashes, raw metadata, raw model output)</summary>
+  <div class="grid grid-3" style="margin-bottom:16px;">
+    <div class="stat"><div class="stat-value" style="font-size:16px;">{{ item.width }}×{{ item.height }}</div><div class="stat-label">Resolution</div></div>
+    <div class="stat"><div class="stat-value mono" style="font-size:13px;">{{ item.phash[:16] }}…</div><div class="stat-label">Perceptual hash</div></div>
+    <div class="stat"><div class="stat-value" style="font-size:16px;">{{ '%.2f'|format(item.ela_score) }}</div><div class="stat-label">Edit-check score</div></div>
+  </div>
+  <p style="font-size:12.5px;color:var(--text-dim);margin-bottom:4px;">SHA-256 fingerprint</p>
+  <div class="mono" style="margin-bottom:16px;">{{ item.sha256 }}</div>
+  <p style="font-size:12.5px;color:var(--text-dim);margin-bottom:4px;">EXIF metadata</p>
+  {% if metadata %}
+    <table style="margin-bottom:16px;">
+      {% for k, v in metadata.items() %}
+      <tr><td>{{ k }}</td><td>{{ v }}</td></tr>
+      {% endfor %}
+    </table>
+  {% else %}
+    <div class="empty" style="padding:10px 0;text-align:left;">None found — most messaging apps strip this regardless of whether the photo is genuine.</div>
+  {% endif %}
+  {% if ai_raw %}
+    <p style="font-size:12.5px;color:var(--text-dim);margin-bottom:4px;">Raw classifier output</p>
+    <table>
+      <tr><th>Label</th><th>Score</th></tr>
+      {% for r in ai_raw %}<tr><td>{{ r.label }}</td><td>{{ '%.4f'|format(r.score) }}</td></tr>{% endfor %}
+    </table>
+  {% endif %}
+</details>
+
 {% else %}
+<!-- VIDEO -->
 <div class="card section media-preview">
   <video controls src="{{ url_for('media', evidence_id=item.id, kind='original') }}"></video>
 </div>
-{% endif %}
 
 <div class="card section">
-  <h3>AI Analysis</h3>
+  <h3><span class="eyebrow">Weakest signal — read with caution</span>What does the AI classifier think?</h3>
   {% if item.ai_fake_score is not none %}
-    <p class="hint" style="margin-bottom:14px;">Single pretrained classifier, accuracy not independently validated —
-      one signal to weigh alongside the others on this page, not a verdict on its own. Tuned for
-      photographic face/human content; unreliable outside that domain.</p>
-    {% if item.kind == 'image' and item.faces_detected == 0 %}
-      <div class="flash flash-error" style="margin-bottom:14px;background:rgba(227,179,65,.1);border-color:rgba(227,179,65,.3);color:var(--amber);">
-        No faces detected in this image — this classifier is calibrated on photographic faces.
-        Screenshots, documents, and graphics fall outside what it was built to judge; this score
-        is likely noise and should be disregarded rather than trusted.
-      </div>
-    {% endif %}
-    {% if item.kind == 'image' %}
-      <div class="grid grid-2">
-        <div class="stat"><div class="stat-value">{{ '%.1f'|format(item.ai_fake_score*100) }}%</div><div class="stat-label">Synthetic / Fake</div></div>
-        <div class="stat"><div class="stat-value">{{ '%.1f'|format(item.ai_real_score*100) }}%</div><div class="stat-label">Real / Authentic</div></div>
-      </div>
-      <p style="margin-top:14px;font-size:13.5px;">Detected face regions: <strong>{{ item.faces_detected }}</strong></p>
-      {% if item.face_overlay_filepath %}
-        <div class="media-preview" style="max-width:480px;">
-          <img src="{{ url_for('media', evidence_id=item.id, kind='overlay') }}" alt="">
-          <div class="media-caption">Face-region analysis</div>
-        </div>
-      {% endif %}
-      {% if ai_raw %}
-        <div class="table-wrap" style="margin-top:14px;">
-          <table>
-            <tr><th>Label</th><th>Score</th></tr>
-            {% for r in ai_raw %}<tr><td>{{ r.label }}</td><td>{{ '%.4f'|format(r.score) }}</td></tr>{% endfor %}
-          </table>
-        </div>
-      {% endif %}
-    {% else %}
-      <p style="font-size:13.5px;">Average synthetic score across sampled frames: <strong>{{ '%.1f'|format(item.ai_fake_score*100) }}%</strong></p>
-      {% if video_frames %}
-        <div class="table-wrap">
-          <table>
-            <tr><th>Frame</th><th>Time (s)</th><th>Synthetic Score</th></tr>
-            {% for f in video_frames %}<tr><td>{{ f.frame }}</td><td>{{ f.seconds }}</td><td>{{ '%.1f'|format(f.synthetic_score*100) }}%</td></tr>{% endfor %}
-          </table>
-        </div>
-      {% endif %}
-      {% if video_temporal %}
-        <p style="font-size:13.5px;margin-top:14px;">
-          Frame-to-frame consistency score: <strong>{{ video_temporal.consistency_score }}/100</strong>
-          ({{ video_temporal.flagged_count }} flagged discontinuity(ies) out of {{ video_temporal.total_transitions }} transitions,
-          across {{ video_temporal.bursts|length }} sampled burst(s))
-        </p>
-        {% if video_temporal.flagged_count %}
-          <div class="table-wrap">
-            <table>
-              <tr><th>From frame</th><th>To frame</th><th>Time (s)</th><th>pHash bits changed</th></tr>
-              {% for b in video_temporal.bursts %}
-                {% for f in b.flagged %}
-                  <tr><td>{{ f.from_frame }}</td><td>{{ f.to_frame }}</td><td>{{ f.seconds }}</td><td>{{ f.bits }} / 256</td></tr>
-                {% endfor %}
-              {% endfor %}
-            </table>
-          </div>
-        {% endif %}
-        <p class="hint">Tracks the detected face crop across short bursts of consecutive frames (start/middle/end
-          of the clip) and flags sudden pHash jumps between neighboring frames — the kind of blend-boundary
-          flicker a face-swap leaves that a per-frame classifier average never looks for. Threshold is a
-          first-pass heuristic, not yet validated against known deepfake samples.</p>
-      {% elif item.kind == 'video' %}
-        <p class="hint">No face detected across sampled frames — frame-to-frame consistency check needs a
-          tracked face region and was skipped.</p>
-      {% endif %}
+    <p class="why">Sampled frames scored independently, then averaged — a screening pass, not the main finding for video. The check below is the one that actually looks for something video-specific.</p>
+    <p style="font-size:13.5px;">Average synthetic score across sampled frames: <strong>{{ '%.0f'|format(item.ai_fake_score*100) }}%</strong></p>
+    {% if video_frames %}
+      <details class="tech" style="margin-top:12px;">
+        <summary>Per-frame scores</summary>
+        <table>
+          <tr><th>Frame</th><th>Time (s)</th><th>Synthetic score</th></tr>
+          {% for f in video_frames %}<tr><td>{{ f.frame }}</td><td>{{ f.seconds }}</td><td>{{ '%.1f'|format(f.synthetic_score*100) }}%</td></tr>{% endfor %}
+        </table>
+      </details>
     {% endif %}
   {% else %}
-    <p style="font-size:13.5px;color:var(--text-dim);margin-bottom:12px;">No AI analysis run yet.</p>
+    <p style="font-size:13.5px;color:var(--text-dim);margin-bottom:12px;">Not run yet.</p>
     <form method="post" action="{{ url_for('ai_run', evidence_id=item.id) }}">
-      <button class="btn" type="submit">Run AI {{ 'Image Detector' if item.kind == 'image' else 'Video Frame Analysis' }}</button>
+      <button class="btn" type="submit">Run video analysis</button>
     </form>
   {% endif %}
-  <p class="hint">AI output is an advisory screening signal and should not be treated as proof by itself.</p>
 </div>
+
+{% if video_temporal %}
+<div class="card section">
+  <h3><span class="eyebrow">Video-specific check</span>Does the footage glitch between frames?</h3>
+  <p class="why">A face-swap has to blend a fake face onto real footage, frame by frame — and that seam tends to
+    flicker slightly. This is the one check that actually compares neighboring frames to each other instead of
+    scoring them one at a time.</p>
+  <div class="summary-strip">
+    <span class="pill {{ 'pill-flag' if video_temporal.flagged_count else 'pill-clean' }}">
+      Consistency score: {{ video_temporal.consistency_score }}/100
+    </span>
+    <span class="pill pill-neutral">{{ video_temporal.flagged_count }} glitch(es) out of {{ video_temporal.total_transitions }} frame transitions checked</span>
+  </div>
+  {% if video_temporal.flagged_count %}
+    <div class="table-wrap">
+      <table>
+        <tr><th>Between frame</th><th>And</th><th>Time (s)</th><th>How different</th></tr>
+        {% for b in video_temporal.bursts %}
+          {% for f in b.flagged %}
+            <tr><td>{{ f.from_frame }}</td><td>{{ f.to_frame }}</td><td>{{ f.seconds }}</td><td>{{ f.bits }} / 256 bits</td></tr>
+          {% endfor %}
+        {% endfor %}
+      </table>
+    </div>
+  {% endif %}
+  <p class="hint">Threshold is a first-pass guess, not yet checked against known deepfake footage — treat a flag here as "worth a closer look," not proof.</p>
+</div>
+{% elif item.ai_fake_score is not none %}
+<div class="card section">
+  <div class="empty">No face found across the sampled frames, so the frame-to-frame check had nothing to track and was skipped.</div>
+</div>
+{% endif %}
+{% endif %}
 {% endblock %}
